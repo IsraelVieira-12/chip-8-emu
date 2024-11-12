@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#define SDL_MAIN_HANDLED
+//#define SDL_MAIN_HANDLED
 #include "SDL2/SDL.h"
 
 bool init_sdl(void){
