@@ -1,6 +1,7 @@
 {
     "files.associations": {
-        "sdl.h": "c"
+        "sdl.h": "c",
+        "stdio.h": "c"
     },
     "files.eol": "\n"
 }
