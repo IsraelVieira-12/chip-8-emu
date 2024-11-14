@@ -93,6 +93,8 @@ int main(int argc, char **argv){
     (void)argc;
     (void)argv;
 
+    puts("TESTING CHIP 8");
+
     // Init emulator configuration
     config_t config = {0};
     if(!set_config_from_args(&config, argc, argv)) exit(EXIT_FAILURE);
@@ -118,8 +120,6 @@ int main(int argc, char **argv){
 
     // Final cleanup
     final_cleanup(sdl);
-
-    puts("TESTING CHIP 8");
 
     exit(EXIT_SUCCESS);
 }
