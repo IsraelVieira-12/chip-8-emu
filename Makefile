@@ -1,8 +1,14 @@
-#CFLAGS=-std=c17 -Wall -Wextra -Werror
-CFLAGS=-std=c17 -Wall -Wl,-subsystem,console -Wextra -Werror
+CFLAGS=-std=c17 -Wall -Wextra -Werror
+
+ifeq ($(OS),Windows_NT)
+	OUTPUT=chip8.exe
+	CFLAGS += -Wl,-subsystem,console
+else
+	OUTPUT=chip8.out
+endif
 
 #CONFIG=`sdl2-config --cflags --libs`
-CONFIG=`pkg-config --cflags --libs sdl2`
+CONFIG=$(shell pkg-config --cflags --libs sdl2)
 
 all:
-	gcc chip8.c -o chip8.exe $(CFLAGS) $(CONFIG)
+	gcc chip8.c -o $(OUTPUT) $(CFLAGS) $(CONFIG)
