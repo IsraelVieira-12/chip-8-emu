@@ -2,7 +2,7 @@ CFLAGS=-std=c17 -Wall -Wextra -Werror
 
 ifeq ($(OS),Windows_NT)
 	OUTPUT=chip8.exe
-	CFLAGS += -Wl,-subsystem,console
+#CFLAGS += -Wl,-subsystem,console
 else
 	OUTPUT=chip8.out
 endif

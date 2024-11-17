@@ -142,7 +142,7 @@ int main(int argc, char **argv){
     (void)argc;
     (void)argv;
 
-    puts("TESTING CHIP 8");
+    //puts("TESTING CHIP 8");
 
     // Init emulator configuration
     config_t config = {0};
