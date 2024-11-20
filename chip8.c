@@ -30,10 +30,35 @@ typedef enum
     PAUSED,
 } emulator_state_t;
 
+// CHIP8 instruction format
+typedef struct
+{
+    uint16_t opcode;
+    uint16_t NNN;   //12 bit address/constant
+    uint16_t NN;    //8 bit constant
+    uint16_t N;     //4 bit constant
+    uint16_t X;     //4 bit register identifier
+    uint16_t Y;     //4 bit register identifier
+} instruction_t;
+
+
 // CHIP8 Machine object
 typedef struct
 {
     emulator_state_t state;
+    uint8_t ram[4096];
+    bool display[64*32];    // Emulate original CHIP8 resolution pixels
+    //uint8_t *display;     //display = &ram[0xF00]; display[10]
+    uint16_t stack[12];     // Subroutine stack
+    uint16_t *stack_ptr;
+    uint16_t V[16];         // Data registers V0-VF //V[0x10];
+    uint16_t I;             // index register
+    uint16_t PC;            // Program Counter
+    uint16_t delay_time;    // Decrements at 60hz when >0
+    uint16_t sound_timer;   // Decrements at 60hz and plays tone when >0
+    bool keypad[16];        // Gexadecimal keypad 0x0-0xF
+    const char *rom_name;   // Currently running ROM
+    instruction_t inst;     // Currently executing instruction
 } chip8_t;
 
 
@@ -76,7 +101,7 @@ bool set_config_from_args(config_t *config, const int argc, char **argv)
         //.fg_color = 0xFFFF00FF, // Yellow
         //.bg_color = 0x00000000, // Black
         .fg_color = 0xFFFFFFFF, // White
-        .bg_color = 0xFFFF00FF, // Yellow
+        .bg_color = 0x000000FF, // Black
         .scale_factor = 20, // Default resolution will be 1280x640
     };
 
@@ -90,9 +115,65 @@ bool set_config_from_args(config_t *config, const int argc, char **argv)
 }
 
 // initialize CHIP8 machine
-bool init_chip8(chip8_t *chip8)
+bool init_chip8(chip8_t *chip8, const char rom_name[])
 {
-    chip8->state = RUNNING; // Default machine state to on/running
+    const uint32_t entry_point = 0x200; // CHIP8 ROMs will be loaded to 0x200
+    const uint8_t font[] =
+    {
+        0xF0, 0x90, 0x90, 0x90, 0xF0,   // 0
+        0x20, 0x60, 0x20, 0x20, 0x70,   // 1
+        0xF0, 0x10, 0xF0, 0x80, 0xF0,   // 2
+        0xF0, 0x10, 0xF0, 0x10, 0xF0,   // 3
+        0x90, 0x90, 0xF0, 0x10, 0x10,   // 4
+        0xF0, 0x80, 0xF0, 0x10, 0xF0,   // 5
+        0xF0, 0x80, 0xF0, 0x90, 0xF0,   // 6
+        0xF0, 0x10, 0x20, 0x40, 0x40,   // 7
+        0xF0, 0x90, 0xF0, 0x90, 0xF0,   // 8
+        0xF0, 0x90, 0xF0, 0x10, 0xF0,   // 9
+        0xF0, 0x90, 0xF0, 0x90, 0x90,   // A
+        0xE0, 0x90, 0xE0, 0x90, 0xE0,   // B
+        0xF0, 0x80, 0x80, 0x80, 0xF0,   // C
+        0xE0, 0x90, 0x90, 0x90, 0xE0,   // D
+        0xF0, 0x80, 0xF0, 0x80, 0xF0,   // E
+        0xF0, 0x80, 0xF0, 0x80, 0x80,   // F
+    };
+
+    // Load font
+    memcpy(&chip8->ram[0], font, sizeof(font));
+
+    // Open ROM file
+    FILE *rom = fopen(rom_name, "rb");
+    if(!rom)
+    {
+        SDL_Log("ROM file %s is invalid or does not exist\n", rom_name);
+        return false;
+    }
+
+    // Get/check rom size
+    fseek(rom, 0, SEEK_END);
+    const size_t rom_size = ftell(rom);
+    const size_t max_size = sizeof chip8->ram - entry_point;
+    rewind(rom);
+
+    if(rom_size > max_size)
+    {
+        SDL_Log("ROM file %s is too big! ROM size: %zu, Max size allowed: %zu\n", rom_name, rom_size, max_size);
+        return false;
+    }
+
+    if((fread(&chip8->ram[entry_point], rom_size, 1, rom)) != 1)
+    {
+        SDL_Log("Could not read ROM file %s into CHIP8 memory\n", rom_name);
+        return false;
+    }
+
+    fclose(rom);
+
+    // Set chip8 machine defaults
+    chip8->state = RUNNING;     // Default machine state to on/running
+    chip8->PC = entry_point;    // Start program counter
+    chip8->rom_name = rom_name;
+    chip8->stack_ptr = &chip8->stack[0];
 
     return true; // Success
 }
@@ -141,6 +222,19 @@ void handle_input(chip8_t *chip8)
                         // Escape key: exit window & End program
                         chip8->state = QUIT;
                         return;
+                    case SDLK_SPACE:
+                        // Space bar
+                        if(chip8->state == RUNNING)
+                        {
+                            chip8->state = PAUSED; // Pause
+                        }
+                        else
+                        {
+                            chip8->state = RUNNING; // Resume
+                            puts("=== PAUSED ===");
+                        }
+                        return;
+
                     default:
                         break;
                 }
@@ -155,10 +249,61 @@ void handle_input(chip8_t *chip8)
     }
 }
 
+// Emulate 1 CHIP8 instruction
+void emulate_instruction(chip8_t *chip8)
+{
+    chip8->inst.opcode = (chip8->ram[chip8->PC] << 8) | chip8->ram[chip8->PC+1];
+    chip8->PC += 2; // Pre-increment program counter for next opcode
+
+    // Fill out current instruction format
+    //chip8->inst.category = (chip8->inst.opcode >> 12) & 0x0F;
+    chip8->inst.NNN = chip8->inst.opcode & 0x0FFF;
+    chip8->inst.NN  = chip8->inst.opcode & 0x0FF;
+    chip8->inst.N   = chip8->inst.opcode & 0x0F;
+    chip8->inst.X   = (chip8->inst.opcode >> 8) & 0x0F;
+    chip8->inst.Y   = (chip8->inst.opcode >> 4) & 0x0F;
+
+    // Emulate opcode
+    switch ((chip8->inst.opcode >> 12) & 0x0F)
+    {
+        case 0x00:
+            if(chip8->inst.NN == 0xE0)
+            {
+                // 0x00E0: clear the screen
+                memset(&chip8->display[0], false, sizeof chip8-> display);
+            }
+            else if(chip8->inst.NN == 0xEE)
+            {
+                // 0X00ee: Return from subroutine
+                // Set program counter to last address on subroutine stack ("pop" it off the stack)
+                //  so that next opcode will be gotten from that address.
+                chip8->PC = *--chip8->stack_ptr;
+            }
+            break;
+        case 0x02:
+            // 0x2NNN: Call subroutine at NNN
+            // Store current address to return to on subroutine stack ("push" it on the stack)
+            //  and set program counter to subroutine address so that the next opcode
+            //  iss gotten from there.
+            *chip8->stack_ptr++ = chip8->PC;
+            chip8->PC = chip8->inst.NNN;
+            break;
+
+        default:
+            break; // Unimplemented or invalid opcode
+    }
+}
+
 //a squeeze do mr. gui
 int main(int argc, char **argv)
 {
-    //initialize emulator configuration/options
+    // Default usage message for args
+    if(argc < 2)
+    {
+        fprintf(stderr, "Usage: %s <rom_name>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+    // Initialize emulator configuration/options
     config_t config = {0};
     if(!set_config_from_args(&config, argc, argv)) exit(EXIT_FAILURE);
 
@@ -168,9 +313,10 @@ int main(int argc, char **argv)
 
     //initialize CHIP8 Machine
     chip8_t chip8 = {0};
-    if (!init_chip8(&chip8)) exit(EXIT_FAILURE);
+    const char *rom_name = argv[1];
+    if (!init_chip8(&chip8, rom_name)) exit(EXIT_FAILURE);
 
-    //initial screen..
+    //initial screen clear to background color
     clear_screen(sdl, config);
 
     while(chip8.state != QUIT)
@@ -178,10 +324,13 @@ int main(int argc, char **argv)
         // Handle User Input
         handle_input(&chip8);
 
-        // if(cjip8.state == PAUSED) continue;
+        if(chip8.state == PAUSED) continue;
 
         // Get_time();
+
         // Emulate CHIP8 Instructions
+        emulate_instruction(&chip8);
+
         //Get_time(); elapsed since last get_time();
         // Delay for 60hz/60fps
         SDL_Delay(16);
