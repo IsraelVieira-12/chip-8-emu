@@ -12,3 +12,6 @@ CONFIG=$(shell pkg-config --cflags --libs sdl2)
 
 all:
 	gcc chip8.c -o $(OUTPUT) $(CFLAGS) $(CONFIG)
+
+debug:
+	gcc chip8.c -o $(OUTPUT) $(CFLAGS) $(CONFIG) -DDEBUG
