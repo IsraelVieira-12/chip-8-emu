@@ -9,7 +9,8 @@
                 "-g",
                 "${file}",
                 "-o",
-                "${fileDirname}/${fileBasenameNoExtension}"
+                "${fileDirname}.out",
+                "-std=c17", "-Wall", "-Wextra", "-Werror", "-I/usr/include/SDL2", "-D_REENTRANT", "-lSDL2"
             ],
             "options": {
                 "cwd": "${fileDirname}"
