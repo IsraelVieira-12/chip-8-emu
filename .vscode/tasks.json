@@ -2,8 +2,8 @@
     "tasks": [
         {
             "type": "cppbuild",
-            "label": "C/C++: Windows gcc build",
-            "command": "C:/msys64/ucrt64/bin/gcc.exe",
+            "label": "C/C++: Windows GCC Build",
+            "command": "gcc",
             "args": [
                 "-fdiagnostics-color=always",
                 "-g",
@@ -39,8 +39,8 @@
         },
         {
             "type": "cppbuild",
-            "label": "C/C++: Linux gcc build",
-            "command": "/usr/bin/gcc",
+            "label": "C/C++: Linux GCC Build",
+            "command": "gcc",
             "args": [
                 "-fdiagnostics-color=always",
                 "-g",
