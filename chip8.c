@@ -157,7 +157,15 @@ bool init_chip8(chip8_t *chip8, const char rom_name[])
 
     if(rom_size > max_size)
     {
+        #ifdef _WIN32
+
+        SDL_Log("ROM file %s is too big!\n", rom_name);
+        
+        #else
+
         SDL_Log("ROM file %s is too big! ROM size: %zu, Max size allowed: %zu\n", rom_name, rom_size, max_size);
+
+        #endif
         return false;
     }
 
