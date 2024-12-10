@@ -205,8 +205,45 @@ void clear_screen(const sdl_t sdl, const config_t config)
     SDL_RenderClear(sdl.renderer);
 }
 
-void update_screen(sdl_t sdl)
+void update_screen(const sdl_t sdl, const config_t config, const chip8_t chip8)
 {
+    SDL_Rect rect = {.x = 0, .y = 0, .w = config.scale_factor, .h = config.scale_factor}; 
+
+    // Grab color values to draw
+    const uint8_t fg_r = (config.fg_color >> 24) & 0xFF;
+    const uint8_t fg_g = (config.fg_color >> 16) & 0xFF;
+    const uint8_t fg_b = (config.fg_color >>  8) & 0xFF;
+    const uint8_t fg_a = (config.fg_color >>  0) & 0xFF;
+
+    const uint8_t bg_r = (config.bg_color >> 24) & 0xFF;
+    const uint8_t bg_g = (config.bg_color >> 16) & 0xFF;
+    const uint8_t bg_b = (config.bg_color >>  8) & 0xFF;
+    const uint8_t bg_a = (config.bg_color >>  0) & 0xFF;
+
+    // 
+    for(uint32_t i = 0; i < sizeof chip8.display; i++)
+    {
+        // 
+        // 
+        // 
+        rect.x = (i % config.window_width) * config.scale_factor;
+        rect.y = (i / config.window_width) * config.scale_factor;
+
+        if(chip8.display[i])
+        {
+            // Pixel is on
+            SDL_SetRenderDrawColor(sdl.renderer, fg_r, fg_g, fg_b, fg_a);
+            SDL_RenderFillRect(sdl.renderer, &rect);
+        }
+        else
+        {
+            // Pixel is off
+            SDL_SetRenderDrawColor(sdl.renderer, bg_r, bg_g, bg_b, bg_a);
+            SDL_RenderFillRect(sdl.renderer, &rect);
+        }
+    }
+    
+    // Loop through displau pixels, draw a rectangle perpixel to the SDL window   
     SDL_RenderPresent(sdl.renderer);
 }
 
@@ -283,7 +320,8 @@ void handle_input(chip8_t *chip8)
                 {
                     printf("Unimplemented code.\n");
                 }
-                break;
+            break;
+
             case 0x02:
                 // 0x2NNN: Call subroutine at NNN
                 // Store current address to return to on subroutine stack ("push" it on the stack)
@@ -291,21 +329,32 @@ void handle_input(chip8_t *chip8)
                 //  iss gotten from there.
                 *chip8->stack_ptr++ = chip8->PC;
                 chip8->PC = chip8->inst.NNN;
-                break;
+            break;
 
             case 0X06:
-            // 0x6NN: Set register VX to NN
-            printf("Set register V%X to NN (0x%02X)\n", chip8->inst.X, chip8->inst.NN);
+                // 0x6NN: Set register VX to NN
+                printf("Set register V%X = NN (0x%02X)\n", chip8->inst.X, chip8->inst.NN);
             break;
+            
+            /*case 0X07:
+                // 0x7NN: Set register VX += NN
+                printf("Set register V%X (0x%02X)+= NN [0x%02X]. Result: 0x%02X\n",
+                chip8->V[chip8->inst.X] + chip8->inst.NN);
+            break;*/
 
             case 0X0A:
                 // 0xANNN: Set index register I to NNN
                 printf("Set I to NNN (0x%o4X)\n", chip8->inst.NNN);
-                break;
+            break;
+
+            case 0X0D:
+                // 0xANNN: Set index register I to NNN
+                // corrigir depois: printf("Draw N (%u) height sprite at coords V%X (0x%02X), V%X (0x%02X) from memory location I (0x%04X). Set VF = 1 if any pixels are turned off.\n", chip8->inst.N,  chip8->inst.X, chip8->inst.V[chip8->inst.X],  chip8->inst.Y,  chip8->inst.V[chip8->inst.Y],  chip8->I);
+            break;
 
             default:
                 printf("Unimplemented Opcode\n");
-                break; // Unimplemented or invalid opcode
+            break; // Unimplemented or invalid opcode
         }
     }
     
@@ -345,7 +394,8 @@ void emulate_instruction(chip8_t *chip8, const config_t config)
                 //  so that next opcode will be gotten from that address.
                 chip8->PC = *--chip8->stack_ptr;
             }
-            break;
+        break;
+        
         case 0x02:
             // 0x2NNN: Call subroutine at NNN
             // Store current address to return to on subroutine stack ("push" it on the stack)
@@ -353,32 +403,39 @@ void emulate_instruction(chip8_t *chip8, const config_t config)
             //  iss gotten from there.
             *chip8->stack_ptr++ = chip8->PC;
             chip8->PC = chip8->inst.NNN;
-            break;
+        break;
 
         case 0X06:
             // 0x6NN: Set register VX to NN
             chip8->V[chip8->inst.X] = chip8->inst.NN;
-            break;
+        break;
+
+        case 0X07:
+            // 0x7NN: Set register VX += NN
+            chip8->V[chip8->inst.X] += chip8->inst.NN;
+        break;
 
         case 0X0A:
             // 0xANNN: Set index register I to NNN
             chip8->I = chip8->inst.NNN;
-            break; 
+        break; 
 
         case 0X0D:
             // 0xDXYN: Draw N-height sprite at coods X, Y; Read from memory location I;
             //  Screen pixels are XOR'd with sprite bits
             //  VF (Carry flag) is set if any screen pixels are set off; this is useful
             //  for collision detection or other reason.
-            const uint8_t X_coord = chip8->V[chip8->inst.X] % config.window_width;
-            const uint8_t Y_coord = chip8->V[chip8->inst.Y] % config.window_height;
+            uint8_t X_coord = chip8->V[chip8->inst.X] % config.window_width;
+            uint8_t Y_coord = chip8->V[chip8->inst.Y] % config.window_height;
+            const uint8_t orig_X = X_coord; // Original X value
             
             chip8->V[0xF] = 0; // Initialize carry flag to 0
 
             for(uint8_t i = 0; i < chip8->inst.N; i++)
             {
                 // Get next byte/row of sprite data
-                const uint8_t sprite_data = chip8->ram[chip8->I = i];
+                const uint8_t sprite_data = chip8->ram[chip8->I + i];
+                X_coord = orig_X;   // Reset X for next row to draw
                 
                 // If sprite pixel/bit is on and display pixel is on, set carry flag
                 for(int8_t j = 7; j >= 0; j--)
@@ -392,10 +449,14 @@ void emulate_instruction(chip8_t *chip8, const config_t config)
 
                     // XOR display pixel with sprite pixel/bit
                     *pixel ^= sprite_bit;
-                }
-            }
 
-            break;
+                    // Stop drawing this row if hit right edge of screen
+                    if(++X_coord >= config.window_width) break;
+                }
+                // Stop drawing entire sprite
+                if(++Y_coord >= config.window_height) break;
+            }
+        break;
 
         default:
             break; // Unimplemented or invalid opcode
@@ -422,7 +483,7 @@ int main(int argc, char **argv)
     //initialize CHIP8 Machine
     chip8_t chip8 = {0};
     const char *rom_name = argv[1];
-    if (!init_chip8(&chip8, rom_name)) exit(EXIT_FAILURE);
+    if(!init_chip8(&chip8, rom_name)) exit(EXIT_FAILURE);
 
     //initial screen clear to background color
     clear_screen(sdl, config);
@@ -444,7 +505,7 @@ int main(int argc, char **argv)
         SDL_Delay(16);
 
         // Update window with changes
-        update_screen(sdl);
+        update_screen(sdl, config, chip8);
     }
 
     // Final cleanup
