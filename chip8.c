@@ -20,6 +20,7 @@ typedef struct
     uint32_t fg_color;      // Foregroud Color RGBA8888
     uint32_t bg_color;      // Foregroud Color RGBA8888
     uint32_t scale_factor;  // Amount to scale a CHIP8 by e. g. 20x will be a 20x larger window
+    bool pixel_outlines;    // Draw pixel "outlines" yes/no
 } config_t;
 
 // Emulator states
@@ -103,6 +104,7 @@ bool set_config_from_args(config_t *config, const int argc, char **argv)
         .fg_color = 0xFFFFFFFF, // White
         .bg_color = 0x000000FF, // Black
         .scale_factor = 20, // Default resolution will be 1280x640
+        .pixel_outlines = true, // Draw pixel "outlines" by default
     };
 
     //override defaults from passed in arguments
@@ -220,12 +222,12 @@ void update_screen(const sdl_t sdl, const config_t config, const chip8_t chip8)
     const uint8_t bg_b = (config.bg_color >>  8) & 0xFF;
     const uint8_t bg_a = (config.bg_color >>  0) & 0xFF;
 
-    // 
+    // Loop through display pixels, draw a rectangle per pixel to the SDL Window
     for(uint32_t i = 0; i < sizeof chip8.display; i++)
     {
-        // 
-        // 
-        // 
+        // Translate 1D index i value to 2D X/Y coordinates
+        // X = i % window width
+        // X = i / window width
         rect.x = (i % config.window_width) * config.scale_factor;
         rect.y = (i / config.window_width) * config.scale_factor;
 
@@ -234,6 +236,13 @@ void update_screen(const sdl_t sdl, const config_t config, const chip8_t chip8)
             // Pixel is on
             SDL_SetRenderDrawColor(sdl.renderer, fg_r, fg_g, fg_b, fg_a);
             SDL_RenderFillRect(sdl.renderer, &rect);
+
+            // if user requested dreawing pixel outlines, draw those here
+            if(config.pixel_outlines)
+            {
+                SDL_SetRenderDrawColor(sdl.renderer, bg_r, bg_g, bg_b, bg_a);
+                SDL_RenderDrawRect(sdl.renderer, &rect);
+            }
         }
         else
         {
@@ -322,6 +331,12 @@ void handle_input(chip8_t *chip8)
                 }
             break;
 
+            case 0x01:
+                // 0x01NNN: Jump to addres NNN
+                printf("Jump to addres NNN (0x%04X)\n",
+                chip8->inst.NNN);    // Set Program counter so that next opcode is from NNN
+            break;
+
             case 0x02:
                 // 0x2NNN: Call subroutine at NNN
                 // Store current address to return to on subroutine stack ("push" it on the stack)
@@ -396,6 +411,11 @@ void emulate_instruction(chip8_t *chip8, const config_t config)
             }
         break;
         
+        case 0x01:
+            // 0x01NNN: Jump to addres NNN
+            chip8->PC = chip8->inst.NNN;    // Set Program counter so that next opcode is from NNN
+        break;
+
         case 0x02:
             // 0x2NNN: Call subroutine at NNN
             // Store current address to return to on subroutine stack ("push" it on the stack)
@@ -440,7 +460,8 @@ void emulate_instruction(chip8_t *chip8, const config_t config)
                 // If sprite pixel/bit is on and display pixel is on, set carry flag
                 for(int8_t j = 7; j >= 0; j--)
                 {
-                    bool *pixel = &chip8->display[Y_coord*config.window_height + X_coord];
+                    //bool *pixel = &chip8->display[Y_coord*config.window_height + X_coord];
+                    bool *pixel = &chip8->display[Y_coord*config.window_width + X_coord];
                     const bool sprite_bit = (sprite_data & (1 << j));
                     if(sprite_bit && *pixel)
                     {
@@ -459,7 +480,8 @@ void emulate_instruction(chip8_t *chip8, const config_t config)
         break;
 
         default:
-            break; // Unimplemented or invalid opcode
+        
+        break; // Unimplemented or invalid opcode
     }
 }
 
