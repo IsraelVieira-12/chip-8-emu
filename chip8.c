@@ -299,6 +299,15 @@ void print_debug_info(chip8_t *chip8){
             *chip8->stack_ptr++ = chip8->PC; 
             chip8->PC = chip8->inst.NNN;
             break;
+        case 0x03:
+            printf("Check if V%X (0x%02X) == NN (0x%02X), skip next instruction if true\n",  chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.NN);
+            break;
+        case 0x04:
+            printf("Check if V%X (0x%02X) != NN (0x%02X), skip next instruction if true\n",  chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.NN);
+            break;
+        case 0x05:
+            printf("Check if V%X (0x%02X) == V%X (0x%02X), skip next instruction if true\n",  chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.Y, chip8->V[chip8->inst.Y]);
+            break;
         case 0x0A:
             // 0xANNN: Set I to NNN
             printf("Set I to NNN (0x%04X)\n", chip8->inst.NNN);
@@ -356,6 +365,9 @@ void emulate_instructions(chip8_t *chip8, const config_t config){
                 // so that next opcode will be gotten from address.
                 chip8->PC = *--chip8->stack_ptr;
             }
+            else {
+                // Unimplemented invalid code, may be 0xNNN fro calling machine code routine for RCA1802
+            }
             break;
         case 0x01:
             // 0x1NNN jumps to address NNN
@@ -369,6 +381,26 @@ void emulate_instructions(chip8_t *chip8, const config_t config){
 
             *chip8->stack_ptr++ = chip8->PC; 
             chip8->PC = chip8->inst.NNN;
+            break;
+        case 0x03:
+            // 0x3XNN: Check if VX == NN, if so, skip the next instruction
+            if(chip8->V[chip8->inst.X] == chip8->inst.NN){
+                chip8->PC += 2; // Skip next opcode/instruction
+            } 
+            break;
+        case 0x04:
+            // 0x4XNN: Check if VX != NN, if so, skip the next instruction
+            if(chip8->V[chip8->inst.X] != chip8->inst.NN){
+                chip8->PC += 2; // Skip next opcode/instruction
+            } 
+            break;
+        case 0x05:
+            if(chip8-> inst.N != 0) break; // Wrong opcode
+
+            // 0x5XY0: Check if VX == VY, if so, skip the next instruction
+            if(chip8->V[chip8->inst.X] == chip8->V[chip8->inst.Y]){
+                chip8->PC += 2; // Skip next opcode/instruction
+            } 
             break;
         case 0x06:
             // 0x6XNN: Set register V[X] to NN
