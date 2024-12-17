@@ -21,6 +21,7 @@ typedef struct
     uint32_t fg_color;      // foreground RGBA8888
     uint32_t bg_color;      // background RGBA8888
     uint32_t scale_factor;  // Amount to scale a chip8 pixel by e.g. 20x will be a 20x larger window
+    bool pixel_outlines;    // Draw pixel "outlines" yes/no
 } config_t;
 
 // Emulator states
@@ -93,6 +94,7 @@ bool set_config_from_args(config_t *config, const int argc, char **argv) {
         .fg_color = 0xFFFFFFFF, // WHITE
         .bg_color = 0x000000FF, // BLACK
         .scale_factor = 20,     // Default resolution will ve 1280x640
+        .pixel_outlines = true, // Draw pixel "outlines" by default
 
     };
 
@@ -203,8 +205,16 @@ void update_screen(const sdl_t sdl, const config_t config, const chip8_t chip8) 
         rect.y = (i / config.window_width) * config.scale_factor;
 
         if (chip8.display[i]) {
+            // Pixel is on, draw foreground color
             SDL_SetRenderDrawColor(sdl.renderer, fg_r, fg_g, fg_b, fg_a);
             SDL_RenderFillRect(sdl.renderer, &rect);
+
+            // if user requested drawing pixel outlines, draw those here
+            if (config.pixel_outlines) {
+                SDL_SetRenderDrawColor(sdl.renderer, bg_r, bg_g, bg_b, bg_a);
+                SDL_RenderDrawRect(sdl.renderer, &rect);
+            }
+
         } else {
             // Pixel is off, draw background color
             SDL_SetRenderDrawColor(sdl.renderer, bg_r, bg_g, bg_b, bg_a);
@@ -278,6 +288,12 @@ void print_debug_info(chip8_t *chip8) {
             } else {
                 printf("Unimplemented Opcode.\n");
             }
+            break;
+        
+        case 0x01:
+            // 0X1NNN: Jump to address NNN
+            printf("Jump to address NNN (0x%04X)\n",
+                chip8->inst.NNN);
             break;
 
         case 0x02:
@@ -353,6 +369,11 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
             }
             break;
 
+        case 0x01:
+            // 0X1NNN: Jump to address NNN
+            chip8->PC = chip8->inst.NNN; // Set program counter so that next opcode is from NNN
+            break;
+
         case 0x02:
             // 0x2NNN: Call subroutine at NNN
             // Store current address to return to on subroutine stack ("push" int on the stack)
@@ -395,7 +416,8 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
 
                 for (int8_t j = 7; j >= 0; j--){
                     //if sprite pixel/bit is on and display pixel is on, set carry flag
-                    bool *pixel = &chip8->display[Y_coord * config.window_height + X_coord];
+                    //bool *pixel = &chip8->display[Y_coord * config.window_height + X_coord];
+                    bool *pixel = &chip8->display[Y_coord * config.window_width + X_coord]; // NEW
                     const bool sprite_bit = (sprite_data & (1 << j));
                     
                     if (sprite_bit && *pixel) {
