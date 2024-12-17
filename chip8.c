@@ -346,23 +346,39 @@ void handle_input(chip8_t *chip8)
                 chip8->PC = chip8->inst.NNN;
             break;
 
-            case 0X06:
+            case 0x03:
+                // 0x03NN: Check if VX == NN, if so, skip the next instruction
+                printf("Check if V%X (0x%02X) == NN (0x%02X), skip next instruction if true\n",  chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.NN);
+            break;
+
+            case 0x04:
+                // 0x04NN: Check if VX != NN, if so, skip the next instruction
+                printf("Check if V%X (0x%02X) != NN (0x%02X), skip next instruction if true\n",  chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.NN);
+            break;
+
+            case 0x05:
+                // 0x5XY0: Check if VX == VY, if so, skip the next instruction
+                printf("Check if V%X (0x%02X) != V%X (0x%02X), skip next instruction if true\n",  chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.Y, chip8->V[chip8->inst.Y]);
+            break;
+
+            case 0x06:
                 // 0x6NN: Set register VX to NN
                 printf("Set register V%X = NN (0x%02X)\n", chip8->inst.X, chip8->inst.NN);
             break;
             
-            /*case 0X07:
-                // 0x7NN: Set register VX += NN
-                printf("Set register V%X (0x%02X)+= NN [0x%02X]. Result: 0x%02X\n",
+            case 0x07:
+                // 0x6XNN: Set register VX to NN
+                printf("Set register V%X (0x%02X) += NN (0x%02X). Result: 0x%02X\n",
+                chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.NN,
                 chip8->V[chip8->inst.X] + chip8->inst.NN);
-            break;*/
+            break;
 
-            case 0X0A:
+            case 0x0A:
                 // 0xANNN: Set index register I to NNN
                 printf("Set I to NNN (0x%o4X)\n", chip8->inst.NNN);
             break;
 
-            case 0X0D:
+            case 0x0D:
                 // 0xANNN: Set index register I to NNN
                 // corrigir depois: printf("Draw N (%u) height sprite at coords V%X (0x%02X), V%X (0x%02X) from memory location I (0x%04X). Set VF = 1 if any pixels are turned off.\n", chip8->inst.N,  chip8->inst.X, chip8->inst.V[chip8->inst.X],  chip8->inst.Y,  chip8->inst.V[chip8->inst.Y],  chip8->I);
             break;
@@ -409,6 +425,12 @@ void emulate_instruction(chip8_t *chip8, const config_t config)
                 //  so that next opcode will be gotten from that address.
                 chip8->PC = *--chip8->stack_ptr;
             }
+            else
+            {
+                // Unimplement/invalid opcode, may be 0xNNN for calling machine code routine for RCA1802
+
+            }
+
         break;
         
         case 0x01:
@@ -425,22 +447,48 @@ void emulate_instruction(chip8_t *chip8, const config_t config)
             chip8->PC = chip8->inst.NNN;
         break;
 
-        case 0X06:
+        case 0x03:
+            // 0x03NN: Check if VX == NN, if so, skip the next instruction
+            if(chip8->V[chip8->inst.X] == chip8->inst.NN)
+            {
+                chip8->PC += 2; // Skip next opcode/instruction
+            }
+        break;
+
+        case 0x04:
+            // 0x04NN: Check if VX != NN, if so, skip the next instruction
+            if(chip8->V[chip8->inst.X] != chip8->inst.NN)
+            {
+                chip8->PC += 2; // Skip next opcode/instruction
+            }
+        break;
+
+        case 0x05:
+            // 0x5XY0: Check if VX == VY, if so, skip the next instruction
+            if(chip8->inst.N != 0) break; //Wrong opcode
+
+            if(chip8->V[chip8->inst.X] == chip8->V[chip8->inst.Y])
+            {
+                chip8->PC += 2; // Skip next opcode/instruction
+            }
+        break;
+
+        case 0x06:
             // 0x6NN: Set register VX to NN
             chip8->V[chip8->inst.X] = chip8->inst.NN;
         break;
 
-        case 0X07:
+        case 0x07:
             // 0x7NN: Set register VX += NN
             chip8->V[chip8->inst.X] += chip8->inst.NN;
         break;
 
-        case 0X0A:
+        case 0x0A:
             // 0xANNN: Set index register I to NNN
             chip8->I = chip8->inst.NNN;
         break; 
 
-        case 0X0D:
+        case 0x0D:
             // 0xDXYN: Draw N-height sprite at coods X, Y; Read from memory location I;
             //  Screen pixels are XOR'd with sprite bits
             //  VF (Carry flag) is set if any screen pixels are set off; this is useful
