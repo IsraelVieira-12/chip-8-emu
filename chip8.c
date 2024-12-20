@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 //#define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
@@ -57,16 +58,16 @@ typedef struct {
 } chip8_t;
 
 // Initialize SDL
-bool init_sdl(sdl_t *sdl, const config_t config/* const char rom_name[]*/){
+bool init_sdl(sdl_t *sdl, const config_t config, const char rom_name[]){
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER ) != 0) {
         SDL_Log("Could not initialize SDL subsystem! %s\n", SDL_GetError());
         return false;
     }
 
-    //char* appName = "CHIP8 Emulator - ";
-    //strcat(appName, rom_name);
+    char app_name[] = "CHIP8 Emulator - ";
+    strcat(app_name, rom_name);
 
-    sdl->window = SDL_CreateWindow("CHIP8 Emulator", SDL_WINDOWPOS_CENTERED, 
+    sdl->window = SDL_CreateWindow(app_name, SDL_WINDOWPOS_CENTERED, 
                                 SDL_WINDOWPOS_CENTERED,
                                 config.window_width * config.scale_factor,
                                 config.window_height * config.scale_factor, 
@@ -625,7 +626,7 @@ int main(int argc, char **argv){
 
     // Initialize SDL
     sdl_t sdl = {0};
-    if(!init_sdl(&sdl, config)) exit(EXIT_FAILURE);
+    if(!init_sdl(&sdl, config, rom_name)) exit(EXIT_FAILURE);
 
     // Initialize CHIP8 machine
     chip8_t chip8 = {0};
