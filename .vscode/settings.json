@@ -1,6 +1,7 @@
 {
     "files.associations": {
-        "sdl.h": "c"
+        "sdl.h": "c",
+        "compare": "c"
     },
     "files.eol": "\n"
 }

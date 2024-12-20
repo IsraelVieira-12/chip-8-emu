@@ -358,7 +358,7 @@ void handle_input(chip8_t *chip8)
 
             case 0x05:
                 // 0x5XY0: Check if VX == VY, if so, skip the next instruction
-                printf("Check if V%X (0x%02X) != V%X (0x%02X), skip next instruction if true\n",  chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.Y, chip8->V[chip8->inst.Y]);
+                printf("Check if V%X (0x%02X) == V%X (0x%02X), skip next instruction if true\n",  chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.Y, chip8->V[chip8->inst.Y]);
             break;
 
             case 0x06:
@@ -373,9 +373,102 @@ void handle_input(chip8_t *chip8)
                 chip8->V[chip8->inst.X] + chip8->inst.NN);
             break;
 
+            case 0x08:
+                switch(chip8->inst.N)
+                {
+                    case 0:
+                        // 0x8XY0: Set register VX = NY
+                        printf("Set register V%X = V%X (0x%02X)\n",
+                                chip8->inst.X, chip8->inst.Y, chip8->V[chip8->inst.Y]);
+                    break;
+
+                    case 1:
+                        // 0x8XY1: Set register VX |= NY
+                        printf("Set register V%X (0x%02X) |= V%X (0x%02X): Result: 0x%02X\n",
+                                chip8->inst.X, chip8->V[chip8->inst.X],
+                                chip8->inst.Y, chip8->V[chip8->inst.Y],
+                                chip8->V[chip8->inst.X] | chip8->V[chip8->inst.Y]);
+                    break;
+
+                    case 2:
+                        // 0x8XY2: Set register VX &= NY
+                        printf("Set register V%X (0x%02X) &= V%X (0x%02X): Result: 0x%02X\n",
+                                chip8->inst.X, chip8->V[chip8->inst.X],
+                                chip8->inst.Y, chip8->V[chip8->inst.Y],
+                                chip8->V[chip8->inst.X] & chip8->V[chip8->inst.Y]);
+                    break;
+
+                    case 3:
+                        // 0x8XY3: Set register VX ^= VY
+                        printf("Set register V%X (0x%02X) ^= V%X (0x%02X): Result: 0x%02X\n",
+                                chip8->inst.X, chip8->V[chip8->inst.X],
+                                chip8->inst.Y, chip8->V[chip8->inst.Y],
+                                chip8->V[chip8->inst.X] ^ chip8->V[chip8->inst.Y]);
+                    break;
+
+                    case 4:
+                        // 0x8XY4: Set register VX += VY, set VF to 1 if carry
+                        printf("Set register V%X (0x%02X) += V%X (0x%02X), VF = 1 if carry: Result: 0x%02X, VF = %X\n",
+                                chip8->inst.X, chip8->V[chip8->inst.X],
+                                chip8->inst.Y, chip8->V[chip8->inst.Y],
+                                chip8->V[chip8->inst.X] + chip8->V[chip8->inst.Y],
+                                ((uint16_t)chip8->V[chip8->inst.X] + chip8->V[chip8->inst.Y] > 255));
+                    break;
+
+                    case 5:
+                        // 0x8XY5: Set register VX -= VY, set VF to 1 if there is not a borrow (result is positive)
+                        printf("Set register V%X (0x%02X) -= V%X (0x%02X), VF = 1 if carry: Result: 0x%02X, VF = %X\n",
+                                chip8->inst.X, chip8->V[chip8->inst.X],
+                                chip8->inst.Y, chip8->V[chip8->inst.Y],
+                                chip8->V[chip8->inst.X] + chip8->V[chip8->inst.Y],
+                                ((uint16_t)chip8->V[chip8->inst.Y] <= chip8->V[chip8->inst.X]));
+                    break;
+
+                    case 6:
+                        // 0x8XY6: Set register VX >>= 1, store shifted off bit in VF
+                        printf("Set register V%X (0x%02X) >>= 1, VF = 1 if no borrow: Result: 0x%02X, VF = %X\n",
+                                chip8->inst.X, chip8->V[chip8->inst.X],
+                                chip8->V[chip8->inst.X] & 1,
+                                chip8->V[chip8->inst.X] >> 1);
+                    break;
+
+                    case 7:
+                        // 0x8XY7: Set register VX = VY - VX, set VF to 1 if there is not a borrow (result is positive)
+                        printf("Set register V%X = V%X (0x%02X) - V%X (0x%02X), VF = 1 if no borrow: Result: 0x%02X, VF = %X\n",
+                                chip8->inst.X, chip8->inst.Y, chip8->V[chip8->inst.Y],
+                                chip8->inst.X, chip8->V[chip8->inst.X],
+                                chip8->V[chip8->inst.Y] + chip8->V[chip8->inst.X],
+                                (chip8->V[chip8->inst.X] <= chip8->V[chip8->inst.Y]));
+                    break;
+
+                    case 0xE:
+                        // 0x8XYE: Set register VX <<= 1, store shifted off bit in VF
+                        printf("Set register V%X (0x%02X) <<= 1, VF = shifted off bit (%X): Result: 0x%02X\n",
+                                chip8->inst.X, chip8->V[chip8->inst.X],
+                                (chip8->V[chip8->inst.X] & 0x80) >> 7,
+                                chip8->V[chip8->inst.X] << 1);
+                    break;
+
+                    default:
+                        // Wrong/unimplemented opcode
+                    break;
+                }
+            break;
+
+            case 0x09:
+                // 0x9XY0 Check i VX != VY; Skip next instruction if so
+                printf("Check if V%X (0x%02X) != V%X (0x%02X), skip next instruction if true\n",  chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.Y, chip8->V[chip8->inst.Y]);
+            break;
+
             case 0x0A:
                 // 0xANNN: Set index register I to NNN
                 printf("Set I to NNN (0x%o4X)\n", chip8->inst.NNN);
+            break;
+
+            case 0x0B:
+                // 0x0BNNN: Jump to V0 + NNN
+                printf("Set PC to V0 (0X%02X) + NNN (0x%04X): Result PC = x%04X\n",
+                chip8->V[0], chip8->inst.NNN, chip8->V[0] + chip8->inst.NNN);
             break;
 
             case 0x0D:
@@ -483,10 +576,91 @@ void emulate_instruction(chip8_t *chip8, const config_t config)
             chip8->V[chip8->inst.X] += chip8->inst.NN;
         break;
 
+        case 0x08:
+            switch(chip8->inst.N)
+            {
+                case 0:
+                    // 0x8XY0: Set register VX = NY
+                    chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y];
+                break;
+
+                case 1:
+                    // 0x8XY1: Set register VX |= NY
+                    chip8->V[chip8->inst.X] |= chip8->V[chip8->inst.Y];
+                break;
+
+                case 2:
+                    // 0x8XY2: Set register VX &= NY
+                    chip8->V[chip8->inst.X] &= chip8->V[chip8->inst.Y];
+                break;
+
+                case 3:
+                    // 0x8XY3: Set register VX ^= VY
+                    chip8->V[chip8->inst.X] ^= chip8->V[chip8->inst.Y];
+                break;
+
+                case 4:
+                    // 0x8XY4: Set register VX += VY, set VF to 1 if carry
+                    if((uint16_t)(chip8->V[chip8->inst.X] + chip8->V[chip8->inst.Y] > 255))
+                    {
+                        chip8->V[0xF] = 1;
+                    }
+                    chip8->V[chip8->inst.X] += chip8->V[chip8->inst.Y];
+                break;
+
+                case 5:
+                    // 0x8XY5: Set register VX -= VY, set VF to 1 if there is not a borrow (result is positive)
+                    if(chip8->V[chip8->inst.X] > chip8->V[chip8->inst.Y])
+                    {
+                        chip8->V[0xF] = 0;
+                    }
+                    chip8->V[chip8->inst.X] -= chip8->V[chip8->inst.Y];
+                break;
+
+                case 6:
+                    // 0x8XY6: Set register VX >>= 1, store shifted off bit in VF
+                    chip8->V[0xF] = chip8->V[chip8->inst.X] & 1;
+                    chip8->V[chip8->inst.X] >>= 1;
+                break;
+
+                case 7:
+                    // 0x8XY7: Set register VX = VY - VX, set VF to 1 if there is not a borrow (result is positive)
+                    if(chip8->V[chip8->inst.X] <= chip8->V[chip8->inst.Y])
+                    {
+                        chip8->V[0xF] = 1;
+                    }
+                    chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] - chip8->V[chip8->inst.X];
+                break;
+
+                case 0xE:
+                    // 0x8XYE: Set register VX <<= 1, store shifted off bit in VF
+                    chip8->V[0xF] = (chip8->V[chip8->inst.X] & 0x80) >> 7;
+                    chip8->V[chip8->inst.X] <<= 1;
+                break;
+
+                default:
+                    // Wrong/unimplemented opcode
+                break;
+            }
+        break;
+
+        case 0x09:
+            // 0x9XY0 Check i VX != VY; Skip next instruction if so
+            if(chip8->V[chip8->inst.X] != chip8->V[chip8->inst.Y])
+            {
+                chip8->PC += 2;
+            }
+        break;
+
         case 0x0A:
             // 0xANNN: Set index register I to NNN
             chip8->I = chip8->inst.NNN;
         break; 
+
+        case 0x0B:
+            // 0x0BNNN: Jump to V0 + NNN
+            chip8->PC = chip8->V[0] + chip8->inst.NNN;
+        break;
 
         case 0x0D:
             // 0xDXYN: Draw N-height sprite at coods X, Y; Read from memory location I;
