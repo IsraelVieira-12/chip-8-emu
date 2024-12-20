@@ -4,6 +4,7 @@
 #include <stdbool.h>
 //#define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h> //#include "SDL.h"
+#include <string.h>
 
 // SDL Container object
 typedef struct
@@ -63,8 +64,8 @@ typedef struct
 } chip8_t;
 
 
-//Initalize SDL
-bool init_sdl(sdl_t *sdl, const config_t config)
+// Initalize SDL
+bool init_sdl(sdl_t *sdl, const config_t config, const char rom_name[])
 {
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) != 0)
     {
@@ -72,7 +73,11 @@ bool init_sdl(sdl_t *sdl, const config_t config)
         return false;
     }
 
-    sdl -> window = SDL_CreateWindow("CHIP8 Emulator", SDL_WINDOWPOS_CENTERED, 
+    // Window title
+    char window_title[117] = "CHIP8 Emulator - ";
+    strcat(window_title, rom_name);
+
+    sdl -> window = SDL_CreateWindow(window_title, SDL_WINDOWPOS_CENTERED, 
                                     SDL_WINDOWPOS_CENTERED,
                                     config.window_width *config.scale_factor,
                                     config.window_height *config.scale_factor, 
@@ -94,7 +99,7 @@ bool init_sdl(sdl_t *sdl, const config_t config)
 
 bool set_config_from_args(config_t *config, const int argc, char **argv)
 {
-    //set defaults
+    // set defaults
     *config = (config_t)
     {
         .window_width   = 64, //resolução original do chip8
@@ -107,7 +112,7 @@ bool set_config_from_args(config_t *config, const int argc, char **argv)
         .pixel_outlines = true, // Draw pixel "outlines" by default
     };
 
-    //override defaults from passed in arguments
+    // override defaults from passed in arguments
     for(int i = 0; i < argc; i++)
     {
         (void)argv[i]; //prevent compile error from unused variables argc/argv
@@ -719,14 +724,15 @@ int main(int argc, char **argv)
     // Initialize emulator configuration/options
     config_t config = {0};
     if(!set_config_from_args(&config, argc, argv)) exit(EXIT_FAILURE);
+    const char *rom_name = argv[1];
 
     //initialize SDL
     sdl_t sdl = {0};
-    if(!init_sdl(&sdl, config)) exit(EXIT_FAILURE);
+    if(!init_sdl(&sdl, config, rom_name)) exit(EXIT_FAILURE);
 
     //initialize CHIP8 Machine
     chip8_t chip8 = {0};
-    const char *rom_name = argv[1];
+    //const char *rom_name = argv[1];
     if(!init_chip8(&chip8, rom_name)) exit(EXIT_FAILURE);
 
     //initial screen clear to background color
