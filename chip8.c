@@ -27,14 +27,16 @@ typedef struct
 } config_t;
 
 // Emulator states
-typedef enum {
+typedef enum
+{
     QUIT,
     RUNNING,
     PAUSED,
 } emulator_state_t;
 
 // CHIP8 instruction format
-typedef struct {
+typedef struct
+{
     uint16_t opcode;
     uint16_t NNN;   //12 bit address/constant
     uint8_t NN;     //8 bit constant
@@ -44,7 +46,8 @@ typedef struct {
 } instruction_t;
 
 // CHIP8 Machine object
-typedef struct {
+typedef struct
+{
     emulator_state_t state;
     uint8_t ram[4096];
     bool display[64*32];    // uint8_t *display; // display = &ram[0xF00]; display; Emulate original CHIP8 resolution pixels
@@ -61,8 +64,10 @@ typedef struct {
 } chip8_t;
 
 // Initialize SDL
-bool init_sdl(sdl_t *sdl, const config_t config, const char rom_name[]){
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) != 0) {
+bool init_sdl(sdl_t *sdl, const config_t config, const char rom_name[])
+{
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) != 0)
+    {
         SDL_Log("Could not initialize SDL subsystems! %s\n", SDL_GetError());
         return false;
     }
@@ -76,13 +81,15 @@ bool init_sdl(sdl_t *sdl, const config_t config, const char rom_name[]){
                                    config.window_width * config.scale_factor,
                                    config.window_height * config.scale_factor, 
                                    0);
-    if (!sdl->window) {
+    if (!sdl->window)
+    {
         SDL_Log("Could not create SDL window %s\n", SDL_GetError());
         return false;
     }
 
     sdl->renderer = SDL_CreateRenderer(sdl->window, -1, SDL_RENDERER_ACCELERATED);
-    if (!sdl->renderer) {
+    if (!sdl->renderer)
+    {
         SDL_Log("Could not create SDL renderer %s\n", SDL_GetError());
         return false;
     }
@@ -91,8 +98,8 @@ bool init_sdl(sdl_t *sdl, const config_t config, const char rom_name[]){
 }
 
 // Set up initial emulator config from passed in arguments
-bool set_config_from_args(config_t *config, const int argc, char **argv) {
-
+bool set_config_from_args(config_t *config, const int argc, char **argv)
+{
     // Set defaults
     *config = (config_t){
         .window_width = 64, // Original x resolution
@@ -114,7 +121,8 @@ bool set_config_from_args(config_t *config, const int argc, char **argv) {
 }
 
 // Initialize CHIP* machine
-bool init_chip8(chip8_t *chip8, const char rom_name[]) {
+bool init_chip8(chip8_t *chip8, const char rom_name[])
+{
     const uint32_t entry_point = 0x200; // CHIP8 Roms will be loaded to 0x200
     const uint8_t font[] = {
         0xF0, 0x90, 0x90, 0x90, 0xF0,   // 0
@@ -140,7 +148,8 @@ bool init_chip8(chip8_t *chip8, const char rom_name[]) {
 
     // Open rom file
     FILE *rom = fopen(rom_name, "rb");
-    if (!rom) {
+    if (!rom)
+    {
         SDL_Log("Rom file %s is invalid or does not exist\n", rom_name);
         return false;
     }
@@ -151,13 +160,15 @@ bool init_chip8(chip8_t *chip8, const char rom_name[]) {
     const size_t max_size = sizeof chip8->ram - entry_point;
     rewind(rom);
 
-    if (rom_size > max_size) {
+    if (rom_size > max_size)
+    {
         SDL_Log("Rom file %s is too big! Rom size: %zu, Max size allowed: %zu\n",
                 rom_name, rom_size, max_size);
         return false;
     }
 
-    if (fread(&chip8->ram[entry_point], rom_size, 1, rom) != 1) {
+    if (fread(&chip8->ram[entry_point], rom_size, 1, rom) != 1)
+    {
         SDL_Log("Culd not read Rom file %s into CHIP8 memory\n!", rom_name);
     }
 
@@ -172,13 +183,15 @@ bool init_chip8(chip8_t *chip8, const char rom_name[]) {
     return true; // Success
 }
 
-void final_cleanup(const sdl_t sdl) {
+void final_cleanup(const sdl_t sdl)
+{
     SDL_DestroyRenderer(sdl.renderer);
     SDL_DestroyWindow(sdl.window);
     SDL_Quit();
 }
 
-void clear_screen(const sdl_t sdl, const config_t config) {
+void clear_screen(const sdl_t sdl, const config_t config)
+{
     const uint8_t r = (config.bg_color >> 24) & 0xFF;
     const uint8_t g = (config.bg_color >> 16) & 0xFF;
     const uint8_t b = (config.bg_color >>  8) & 0xFF;
@@ -189,7 +202,8 @@ void clear_screen(const sdl_t sdl, const config_t config) {
 }
 
 // Update window with any changes
-void update_screen(const sdl_t sdl, const config_t config, const chip8_t chip8) {
+void update_screen(const sdl_t sdl, const config_t config, const chip8_t chip8)
+{
     SDL_Rect rect = {.x = 0, .y = 0, .w = config.scale_factor, .h = config.scale_factor};
     // Grab color values to draw
     const uint8_t fg_r = (config.fg_color >> 24) & 0xFF;
@@ -210,18 +224,22 @@ void update_screen(const sdl_t sdl, const config_t config, const chip8_t chip8) 
         rect.x = (i % config.window_width) * config.scale_factor;
         rect.y = (i / config.window_width) * config.scale_factor;
 
-        if (chip8.display[i]) {
+        if (chip8.display[i])
+        {
             // Pixel is on, draw foreground color
             SDL_SetRenderDrawColor(sdl.renderer, fg_r, fg_g, fg_b, fg_a);
             SDL_RenderFillRect(sdl.renderer, &rect);
 
             // if user requested drawing pixel outlines, draw those here
-            if (config.pixel_outlines) {
+            if (config.pixel_outlines)
+            {
                 SDL_SetRenderDrawColor(sdl.renderer, bg_r, bg_g, bg_b, bg_a);
                 SDL_RenderDrawRect(sdl.renderer, &rect);
             }
 
-        } else {
+        }
+        else
+        {
             // Pixel is off, draw background color
             SDL_SetRenderDrawColor(sdl.renderer, bg_r, bg_g, bg_b, bg_a);
             SDL_RenderFillRect(sdl.renderer, &rect);
@@ -240,18 +258,22 @@ void update_screen(const sdl_t sdl, const config_t config, const chip8_t chip8) 
 789E                asdf
 A0BF                zxcv
 */
-void handle_input(chip8_t *chip8) {
+void handle_input(chip8_t *chip8)
+{
     SDL_Event event;
 
-    while (SDL_PollEvent(&event)){
-        switch (event.type) {
+    while (SDL_PollEvent(&event))
+    {
+        switch (event.type)
+        {
             case SDL_QUIT:
                 // exit window; End Program
                 chip8->state = QUIT;
                 return;
 
             case SDL_KEYDOWN:
-                switch (event.key.keysym.sym) {
+                switch (event.key.keysym.sym)
+                {
                     case SDLK_ESCAPE:
                         // ESCAPE key; exit window & End program
                         chip8->state = QUIT;
@@ -294,7 +316,8 @@ void handle_input(chip8_t *chip8) {
 
             case SDL_KEYUP:
                 
-                switch(event.key.keysym.sym) {
+                switch(event.key.keysym.sym)
+                {
                 // Map querty keys to CHIP8 keypad                        
                 case SDLK_1: chip8->keypad[0x1] = false; break;
                 case SDLK_2: chip8->keypad[0x2] = false; break;
@@ -327,13 +350,16 @@ void handle_input(chip8_t *chip8) {
 }
 
 #ifdef DEBUG
-void print_debug_info(chip8_t *chip8) {
+void print_debug_info(chip8_t *chip8)
+{
     printf("Address: %04X, Opcode: 0x%04X Desc: ",
             chip8->PC-2, chip8->inst.opcode);
 
-    switch ((chip8->inst.opcode >> 12) & 0x0F) {
+    switch ((chip8->inst.opcode >> 12) & 0x0F)
+    {
         case 0x00:
-            if (chip8->inst.NN == 0xE0) {
+            if (chip8->inst.NN == 0xE0)
+            {
                 // 0x00E0: Clear the screen
                 printf("Clear screen\n");
 
@@ -521,6 +547,24 @@ void print_debug_info(chip8_t *chip8) {
             }
             break;
 
+        case 0x0F:
+            switch (chip8->inst.NN)
+            {
+                case 0x0A:
+                    // 0xFX0A: VX = get_key(); Await until a keypress, and store in VX
+                    printf("Await until a key is pressed; Store key in V%X\n",
+                            chip8->inst.X);
+                break;
+
+                case 0x1E:
+                    //
+                    printf("I (0x%04X) += V%X (0x%02X): Result (I): 0x%04X\n",
+                            chip8->I, chip8->inst.X, chip8->V[chip8->inst.X],
+                            chip8->I + chip8->V[chip8->inst.X]);
+                break;
+            }
+        break;
+
         default:
             printf("Unimplemented Opcode.\n");
             break; // Uniplementeded or ivalid opcode
@@ -650,14 +694,14 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
                     // 0x8XY6: Set register VX >>= 1, store shifted off bit in VF
                     chip8->V[0xF] = chip8->V[chip8->inst.X] & 1;
                     chip8->V[chip8->inst.X] >>= 1;
-                    break;
+                break;
 
                 case 7:
                     // 0x8XY7: Set register VX = VY - VX, set VF to 1 if there is not a borrow (result is positive) 
                     if (chip8->V[0xF] <= chip8->V[chip8->inst.X])
                         chip8->V[0xF] = 1;
                     chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] - chip8->V[chip8->inst.X];
-                    break;
+                break;
                 
                 case 0xE:
                     //0x8EXYE: Set register VX <<- 1, store shifted off bit in VF
@@ -666,30 +710,30 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
 
                 default:
                     // Wrong/unimplemented opcode
-                    break;
+                break;
             }
-            break;
+        break;
 
         case 0x09:
             // 0x9XY0: Check if VX != VY; Skip next instruction if so
             if (chip8->V[chip8->inst.X] != chip8->V[chip8->inst.Y])
                 chip8->PC += 2;
-            break;
+        break;
 
         case 0x0A:
             // 0xANNN: Set index register I to NNN
             chip8->I = chip8->inst.NNN;
-            break;
+        break;
 
         case 0x0B:
             // 0xBNNN: Jump to V0 + NNN
             chip8->PC = chip8->V[0] + chip8->inst.NNN;
-            break;
+        break;
 
         case 0x0C:
             // 0xCXNN: Set register VX = rand() % 256 & NN (bitwise AND)
             chip8->V[chip8->inst.X] = (rand() % 256) & chip8->inst.NN;
-            break;
+        break;
 
         case 0x0D:
             // 0XDXYN: Draw Nheight sprite at coords X,Y; Read from memory location I;
@@ -730,11 +774,14 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
             break;
 
         case 0x0E:
-            if (chip8->inst.NN == 0x9E) {
+            if (chip8->inst.NN == 0x9E)
+            {
                 // 0xEX9E: Skip next instruction if key in VX is pressed
                 if (chip8->keypad[chip8->V[chip8->inst.X]])
                     chip8->PC += 2;
-            } else if (chip8->inst.NN == 0xA1) {
+            } 
+            else if (chip8->inst.NN == 0xA1)
+            {
                 // 0xEX9E: Skip next instruction if key in VX is not pressed
                 if (!chip8->keypad[chip8->V[chip8->inst.X]])
                     chip8->PC += 2;
@@ -742,12 +789,15 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
             break;
 
         case 0x0F:
-            switch (chip8->inst.NN) {
+            switch (chip8->inst.NN)
+            {
                 case 0x0A:
                     // 0xFX0A: VX = get_key(); Await until a keypress, and store in VX
                     bool any_key_pressed = false;
-                    for (uint8_t i = 0; i < sizeof chip8->keypad; i++) {
-                        if (chip8->keypad[i]) {
+                    for (uint8_t i = 0; i < sizeof chip8->keypad; i++)
+                    {
+                        if (chip8->keypad[i])
+                        {
                             chip8->V[chip8->inst.X] = i; // i = key (offset into keypad array)
                             break;
                         }
@@ -757,17 +807,25 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
                 if (!any_key_pressed) chip8->PC -= 2;
                     
                 break;
+
+                case 0x1E:
+                    // 0xFX1E: i += VX: Add VX to register I. For non-Amiga CHIP8, does not affect VF
+                    chip8->I += chip8->V[chip8->inst.X];
+                break;
             }
+        break;
 
         default:
-            break; // Uniplementeded or ivalid opcode
+        break; // Uniplementeded or ivalid opcode
     }
 }
 
 //Squeze
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
     // Dafault Usage message for args
-    if (argc < 2) {
+    if (argc < 2)
+    {
         fprintf(stderr, "Usage:  %s <rom_name>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
@@ -791,7 +849,8 @@ int main(int argc, char **argv) {
     srand(time(NULL));
 
     // Main emulator loop
-    while (chip8.state != QUIT){
+    while (chip8.state != QUIT)
+    {
         // handle user input
         handle_input(&chip8);
 
