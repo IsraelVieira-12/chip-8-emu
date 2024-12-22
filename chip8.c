@@ -64,7 +64,7 @@ bool init_sdl(sdl_t *sdl, const config_t config, const char rom_name[]){
         return false;
     }
 
-    char app_name[117] = "CHIP8 Emulator - ";
+    char app_name[128] = "CHIP8 Emulator - ";
     strcat(app_name, rom_name);
 
     sdl->window = SDL_CreateWindow(app_name, SDL_WINDOWPOS_CENTERED, 

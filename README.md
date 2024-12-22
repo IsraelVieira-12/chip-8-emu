@@ -13,3 +13,9 @@ pacman -S mingw-w64-ucrt-x86_64-SDL2
 ```
 sudo apt install libsdl2-dev
 ```
+
+### Fedora/RHEL:
+
+```
+sudo dnf install SDL2-devel
+```
