@@ -483,7 +483,7 @@ void print_debug_info(chip8_t *chip8){
             }
             break;
         case 0x0F:
-            switch(chip8->inst.N){
+            switch(chip8->inst.NN){
                 case 0x0A:
                     // 0xFX0A: VX = get_key(): Await until a keypress, an store in VX
                     printf("Await until a key is pressed; Store key in V%X\n", chip8->inst.X);
@@ -664,7 +664,7 @@ void emulate_instructions(chip8_t *chip8, const config_t config){
                     break;
                 case 0xE:
                     // 0x8XYE: Set register VX <<= 1, store shifted off bit in VF
-                    chip8->V[0xF] = (chip8->V[chip8->inst.X] & 0x80 >> 7);
+                    chip8->V[0xF] = (chip8->V[chip8->inst.X] & 0x80) >> 7;
                     chip8->V[chip8->inst.X] <<= 1;
                     break;
                 default:
@@ -739,7 +739,7 @@ void emulate_instructions(chip8_t *chip8, const config_t config){
             }
             break;
         case 0x0F:
-            switch(chip8->inst.N){
+            switch(chip8->inst.NN){
                 case 0x0A:
                     // 0xFX0A: VX = get_key(): Await until a keypress, an store in VX
                     bool any_key_pressed = false;
@@ -780,11 +780,11 @@ void emulate_instructions(chip8_t *chip8, const config_t config){
                 case 0x33:
                     // 0xFX33: Store BCD representation of VX in memory locations I, I+1, I+2
                     uint8_t bcd = chip8->V[chip8->inst.X];
-                    chip8->ram[chip8->I + 2] = bcd % 100;
+                    chip8->ram[chip8->I + 2] = bcd % 10;
                     bcd /= 10;
                     chip8->ram[chip8->I + 1] = bcd % 10;
                     bcd /= 10;
-                    chip8->ram[chip8->I] = bcd % 10;
+                    chip8->ram[chip8->I] = bcd;
                     break;
                 case 0x55:
                     // 0xFX55: Store V0 to VX in memory starting at I
