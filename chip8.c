@@ -620,7 +620,7 @@ void print_debug_info(chip8_t *chip8)
 
         default:
             printf("Unimplemented Opcode.\n");
-            break; // Uniplementeded or ivalid opcode
+        break; // Uniplementeded or ivalid opcode
     }
 }
 #endif
@@ -760,7 +760,7 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
                     // 0x8XY7: Set register VX = VY - VX, set VF to 1 if there is not a borrow (result is positive) 
                     /*if (chip8->V[0xF] <= chip8->V[chip8->inst.X])
                         chip8->V[0xF] = 1;*/
-                    chip8->V[0xF] = chip8->V[chip8->inst.X] & 1;
+                    chip8->V[0xF] = chip8->V[chip8->inst.X] <= chip8->V[chip8->inst.Y];
                     chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] - chip8->V[chip8->inst.X];
                 break;
                 
