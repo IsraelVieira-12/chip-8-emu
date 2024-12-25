@@ -22,6 +22,7 @@ typedef struct {
     uint32_t bg_color;  // Background Color RGBA8888
     uint32_t scale_factor; // Amount to scale a CHIP8 pixel by eg 20x will be 20x larger window
     bool pixel_outlines; // Draw pixel outlines yes/no
+    uint32_t insts_per_second; // CHIP8 CPU "clock rate" or hz
 } config_t;
 
 // Emulator states
@@ -99,6 +100,7 @@ bool set_config_from_args(config_t *config, const int argc, char **argv){
         .bg_color = 0x000000FF, // BLACK
         .scale_factor = 20, // Default resolution will be 1280x640
         .pixel_outlines = true, // Draw pixel "outlines" ny default
+        .insts_per_second = 500 // Number of instruction to emulate per second
     };
 
     // Override defaults from passed arguments
@@ -492,11 +494,40 @@ void print_debug_info(chip8_t *chip8){
                     printf("I (0x%04X) += V%X (0x%02X) Result (I): 0x%04X\n",
                         chip8->I, chip8->inst.X, chip8->V[chip8->inst.X], chip8->I + chip8->V[chip8->inst.X]);
                     break;
+                case 0x07:
+                    // 0xFX07: Set VX to delay timer value
+                    printf("Set V%X = delay timer value (0x%02X)\n", chip8->inst.X, chip8->delay_timer);
+                    break;
+                case 0x15:
+                    // 0xFX15: Set delay timer to VX
+                    printf("Set delay timer = V%X (0x%02X)\n", chip8->inst.X, chip8->V[chip8->inst.X]);
+                    break;
+                case 0x18:
+                    // 0xFX18: Set sound timer to VX
+                    printf("Set delay timer = V%X (0x%02X)\n", chip8->inst.X, chip8->V[chip8->inst.X]);
+                    break;
+                case 0x29:
+                    // 0xFX29: Set register I to location of sprite for digit VX
+                    printf("Set I to sprite location in memory for characters in V%X (0x%02X). Result(VX*5) = (0x%02X) \n", chip8->inst.X, chip8->V[chip8->inst.X], chip8->V[chip8->inst.X] * 5);
+                    break;
+                case 0x33:
+                    // 0xFX33: Store BCD representation of VX in memory locations I, I+1, I+2
+                    printf("Store BCD representation of V%X (0x%02X) in memory locations I (0x%04X), I+1, I+2\n", chip8->inst.X, chip8->V[chip8->inst.X], chip8->I);
+                    break;
+                case 0x55:
+                    // 0xFX55: Store V0 to VX in memory starting at I
+                    printf("Register dump V0-V%X (0x%02X) inclusive at memory from I (0x%04x)\n", chip8->inst.X, chip8->V[chip8->inst.X], chip8->I);
+                    break;
+                case 0x65:
+                    // 0xFX65: Store V0 to VX in memory starting at I
+                    printf("Register load V0-V%X (0x%02X) inclusive at memory from I (0x%04x)\n", chip8->inst.X, chip8->V[chip8->inst.X], chip8->I);
+                    break;
                 default:
                     // Wrong/unimplemented opcode
                     break;
             }
             break;
+
         default:
             printf("Unimplemented Opcode\n");
             break;
@@ -610,9 +641,11 @@ void emulate_instructions(chip8_t *chip8, const config_t config){
                     break;
                 case 5:
                     // 0x8XY5: Set register VX -= VY
-                    if (chip8->V[chip8->inst.Y] <= chip8->V[chip8->inst.X]){
-                        chip8->V[0xF] = 1;
-                    }
+                    //if (chip8->V[chip8->inst.Y] <= chip8->V[chip8->inst.X]){
+                    //    chip8->V[0xF] = 1;
+                    //}
+
+                    chip8->V[0xF] = (chip8->V[chip8->inst.Y] <= chip8->V[chip8->inst.X]);
                     chip8->V[chip8->inst.X] -= chip8->V[chip8->inst.Y];
                     break;
                 case 6:
@@ -622,9 +655,11 @@ void emulate_instructions(chip8_t *chip8, const config_t config){
                     break;
                 case 7:
                     // 0x8XY7: Set register VX = VY - VX, set VF to 1 if there is not a borrow (result is positive)
-                    if (chip8->V[chip8->inst.Y] <= chip8->V[chip8->inst.X]){
-                        chip8->V[0xF] = 1;
-                    }
+                    //if (chip8->V[chip8->inst.Y] <= chip8->V[chip8->inst.X]){
+                    //    chip8->V[0xF] = 1;
+                    //}
+
+                    chip8->V[0xF] = (chip8->V[chip8->inst.X] <= chip8->V[chip8->inst.Y]);
                     chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] - chip8->V[chip8->inst.X];
                     break;
                 case 0xE:
@@ -726,6 +761,45 @@ void emulate_instructions(chip8_t *chip8, const config_t config){
                     // 0xFX1E: I += VX; Add VX to register I. For non-Aniga CHIP8, does not affect VF
                     chip8->I += chip8->V[chip8->inst.X];
                     break;
+                case 0x07:
+                    // 0xFX07: Set VX to delay timer value
+                    chip8->V[chip8->inst.X] = chip8->delay_timer;
+                    break;
+                case 0x15:
+                    // 0xFX15: Set delay timer to VX
+                    chip8->delay_timer = chip8->V[chip8->inst.X];
+                    break;
+                case 0x18:
+                    // 0xFX18: Set sound timer to VX
+                    chip8->sound_timer = chip8->V[chip8->inst.X];
+                    break;
+                case 0x29:
+                    // 0xFX29: Set register I to location of sprite for digit VX
+                    chip8->I = chip8->V[chip8->inst.X] * 5; // Each sprite is 5 bytes long
+                    break;
+                case 0x33:
+                    // 0xFX33: Store BCD representation of VX in memory locations I, I+1, I+2
+                    uint8_t bcd = chip8->V[chip8->inst.X];
+                    chip8->ram[chip8->I + 2] = bcd % 100;
+                    bcd /= 10;
+                    chip8->ram[chip8->I + 1] = bcd % 10;
+                    bcd /= 10;
+                    chip8->ram[chip8->I] = bcd % 10;
+                    break;
+                case 0x55:
+                    // 0xFX55: Store V0 to VX in memory starting at I
+                    // NOTE: Could make this a config flag to use SCHHIP or CHIP8 behavior for I
+                    for(uint8_t i = 0; i <= chip8->inst.X; i++){
+                        chip8->ram[chip8->I + i] = chip8->V[i];
+                    }
+                    break;
+                case 0x65:
+                    // 0xFX65: Fill V0 to VX with values from memory starting at I
+                    // NOTE: Could make this a config flag to use SCHHIP or CHIP8 behavior for I
+                    for(uint8_t i = 0; i <= chip8->inst.X; i++){
+                        chip8->V[i] = chip8->ram[chip8->I + i];
+                    }
+                    break;
                 default:
                     // Wrong/unimplemented opcode
                     break;
@@ -733,6 +807,20 @@ void emulate_instructions(chip8_t *chip8, const config_t config){
             break;
         default:
             break;
+    }
+}
+
+void update_timers(chip8_t *chip8){
+    if(chip8->delay_timer > 0){
+        chip8->delay_timer--;
+    }
+
+    if(chip8->sound_timer > 0){
+        chip8->sound_timer--;
+        // TODO: Play sound
+    }
+    else{
+        // TODO: Stop sound
     }
 }
 
@@ -774,16 +862,28 @@ int main(int argc, char **argv){
 
         if(chip8.state == PAUSED) continue;
 
-        emulate_instructions(&chip8, config);
+        // get time before running instructions
+        const uint64_t start_frame_time = SDL_GetPerformanceCounter();
 
         // Get_time();
+
+        // Emulate CHIP8 Instructions for this emulator "frame" (60 hz)
+        for(uint32_t i = 0; i < config.insts_per_second / 60; i++){
+            emulate_instructions(&chip8, config);
+        }
+
+        // get time elapsed since running instructions
+        const uint64_t end_frame_time = SDL_GetPerformanceCounter();
+
         // Emulate CHIP8 instructions
         // Get_time(); elapsed since last get_time();
 
         // Delay for 60hz
-        SDL_Delay(16);
+        const double time_elapsed = (double)((end_frame_time - start_frame_time) / 1000) / SDL_GetPerformanceFrequency();
+        SDL_Delay(16.67f > time_elapsed ? 16.67f - time_elapsed : 0);
 
         update_screen(sdl, config, chip8);
+        update_timers(&chip8);
     }
 
     // Final cleanup
