@@ -84,7 +84,7 @@ void audio_callback(void *userdata, uint8_t *stream, int len)
     //      so divide by 2
     for(int i = 0; i < len / 2; i++)
     {
-        audio_data[i] = ((running_sample_index / half_square_wave_period) % 2) ?
+        audio_data[i] = ((running_sample_index++ / half_square_wave_period) % 2) ?
                         config->volume :
                         -config->volume;
     }
