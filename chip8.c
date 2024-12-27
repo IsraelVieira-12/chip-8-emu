@@ -13,18 +13,23 @@ typedef struct
 {
     SDL_Window *window;
     SDL_Renderer *renderer;
+    SDL_AudioSpec want, have;
+    SDL_AudioDeviceID dev;
 } sdl_t;
 
 // Emulator configuation object
 typedef struct
 {
-    uint32_t window_width;  // SDL Window width
-    uint32_t window_height; // SDL Window height
-    uint32_t fg_color;      // foreground RGBA8888
-    uint32_t bg_color;      // background RGBA8888
-    uint32_t scale_factor;  // Amount to scale a chip8 pixel by e.g. 20x will be a 20x larger window
-    bool pixel_outlines;    // Draw pixel "outlines" yes/no
-    uint32_t insts_per_second; // CHIP8 CPU "clock rate" or Hz
+    uint32_t window_width;      // SDL Window width
+    uint32_t window_height;     // SDL Window height
+    uint32_t fg_color;          // foreground RGBA8888
+    uint32_t bg_color;          // background RGBA8888
+    uint32_t scale_factor;      // Amount to scale a chip8 pixel by e.g. 20x will be a 20x larger window
+    bool pixel_outlines;        // Draw pixel "outlines" yes/no
+    uint32_t insts_per_second;  // CHIP8 CPU "clock rate" or Hz
+    uint32_t square_wave_freq;  // Frequency of square wave sound e.g. 440hz for middle A
+    uint32_t audio_sample_rate; // 
+    int16_t volume;             // How loud is the sound
 } config_t;
 
 // Emulator states
@@ -39,11 +44,11 @@ typedef enum
 typedef struct
 {
     uint16_t opcode;
-    uint16_t NNN;   //12 bit address/constant
-    uint8_t NN;     //8 bit constant
-    uint8_t N;      //4 bit constant
-    uint8_t X;      //4 bit register identifier
-    uint8_t Y;      //4 bit register identifier
+    uint16_t NNN;   // 12 bit address/constant
+    uint8_t NN;     //  8 bit constant
+    uint8_t N;      //  4 bit constant
+    uint8_t X;      //  4 bit register identifier
+    uint8_t Y;      //  4 bit register identifier
 } instruction_t;
 
 // CHIP8 Machine object
@@ -54,18 +59,39 @@ typedef struct
     bool display[64*32];    // uint8_t *display; // display = &ram[0xF00]; display; Emulate original CHIP8 resolution pixels
     uint16_t stack[12];     // Subroutine stack
     uint16_t *stack_ptr;
-    uint8_t V[16];           // Data registrews V0-VF; uint8_t V[0x10]
+    uint8_t V[16];          // Data registrews V0-VF; uint8_t V[0x10]
     uint16_t I;             // Index register
     uint16_t PC;            // Program counter
     uint8_t delay_timer;    // Decrements at 60hz when >0
     uint8_t sound_timer;    // Decrements at 60hz and plays tone when >0
     bool keypad[16];        // Hexadecimal keypad 0x0-0xF
-    const char *rom_name;         // Currently running ROM
+    const char *rom_name;   // Currently running ROM
     instruction_t inst;     // Currently executing instruction
 } chip8_t;
 
+// SDL Audio callback
+// Fill out ...
+void audio_callback(void *userdata, uint8_t *stream, int len)
+{
+    config_t *config = (config_t *)userdata;
+
+    int16_t *audio_data = (int16_t *)stream;
+    static uint32_t running_sample_index = 0;
+    const int32_t square_wave_period = config->audio_sample_rate / config->square_wave_freq;
+    const int32_t half_square_wave_period = square_wave_period / 2;
+
+    // We are filling out 2 bytes at a time (int16_t), len is in bytes.
+    //      so divide by 2
+    for(int i = 0; i < len / 2; i++)
+    {
+        audio_data[i] = ((running_sample_index / half_square_wave_period) % 2) ?
+                        config->volume :
+                        -config->volume;
+    }
+}
+
 // Initialize SDL
-bool init_sdl(sdl_t *sdl, const config_t config, const char rom_name[])
+bool init_sdl(sdl_t *sdl, config_t *config, const char rom_name[])
 {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) != 0)
     {
@@ -79,8 +105,8 @@ bool init_sdl(sdl_t *sdl, const config_t config, const char rom_name[])
 
     sdl -> window = SDL_CreateWindow(window_title, SDL_WINDOWPOS_CENTERED,
                                    SDL_WINDOWPOS_CENTERED,
-                                   config.window_width * config.scale_factor,
-                                   config.window_height * config.scale_factor, 
+                                   config->window_width * config->scale_factor,
+                                   config->window_height * config->scale_factor, 
                                    0);
     if (!sdl->window)
     {
@@ -95,26 +121,56 @@ bool init_sdl(sdl_t *sdl, const config_t config, const char rom_name[])
         return false;
     }
 
-    return true;
+    // Init audio stuff
+    sdl->want = (SDL_AudioSpec)
+    {
+        .freq = 44100,              // 44100 Hz "CD" quality
+        .format = AUDIO_S16LSB,     // Signed 16 bit little endian
+        .channels = 1,              // Mono, 1 channel
+        .samples = 4096,            //
+        .callback = audio_callback, //
+        .userdata = config,         // Userdata passed to audio callback
+    };
+
+    sdl->dev = SDL_OpenAudioDevice(NULL, 0, &sdl->want, &sdl->have, 0);
+
+    if(sdl->dev == 0)
+    {
+        SDL_Log("Could not get an Audio Device %s\n", SDL_GetError());
+        return false;
+    }
+
+    if((sdl->want.channels != sdl->have.channels) ||
+        (sdl->want.format != sdl->have.format))
+    {
+        SDL_Log("Could not get desired Audio Spec\n");
+        return false;
+    }
+
+    return true;    // Success
 }
 
 // Set up initial emulator config from passed in arguments
 bool set_config_from_args(config_t *config, const int argc, char **argv)
 {
     // Set defaults
-    *config = (config_t){
+    *config = (config_t)
+    {
         .window_width = 64, // Original x resolution
         .window_height = 32,
         .fg_color = 0xFFFFFFFF, // WHITE
         .bg_color = 0x000000FF, // BLACK
         .scale_factor = 20,     // Default resolution will ve 1280x640
         .pixel_outlines = true, // Draw pixel "outlines" by default
-        .insts_per_second = 500,// Number of intructions...
-
+        .insts_per_second = 700,// Number of intructions...
+        .square_wave_freq = 440,// 440 Hz for middle A
+        .audio_sample_rate = 44100, // CD quality
+        .volume = 3000,         // INT16_MAX would be max volume
     };
 
     // Override defaults from passed in arguments
-    for (int i = 1; i < argc; i++) {
+    for (int i = 1; i < argc; i++)
+    {
         (void)argv[i]; // Prevent compiler error from unused variables argc/argv
         // ..
     }
@@ -126,7 +182,8 @@ bool set_config_from_args(config_t *config, const int argc, char **argv)
 bool init_chip8(chip8_t *chip8, const char rom_name[])
 {
     const uint32_t entry_point = 0x200; // CHIP8 Roms will be loaded to 0x200
-    const uint8_t font[] = {
+    const uint8_t font[] =
+    {
         0xF0, 0x90, 0x90, 0x90, 0xF0,   // 0
         0x20, 0x60, 0x20, 0x20, 0x70,   // 1  
         0xF0, 0x10, 0xF0, 0x80, 0xF0,   // 2 
@@ -189,7 +246,8 @@ void final_cleanup(const sdl_t sdl)
 {
     SDL_DestroyRenderer(sdl.renderer);
     SDL_DestroyWindow(sdl.window);
-    SDL_Quit();
+    SDL_CloseAudioDevice(sdl.dev);
+    SDL_Quit(); // Shutdown
 }
 
 void clear_screen(const sdl_t sdl, const config_t config)
@@ -931,19 +989,19 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
 }
 
 // Update CHIP8 delay & sound timers every 60 Hz
-void update_timers(chip8_t *chip8)
+void update_timers(const sdl_t sdl, chip8_t *chip8)
 {
     if(chip8->delay_timer > 0) chip8->delay_timer--;
 
     if(chip8->sound_timer > 0)
     {
         chip8->sound_timer--;
-        // TODO: Play sound
+        SDL_PauseAudioDevice(sdl.dev, 0); // Play sound
 
     }
     else
     {
-        // TODO: Stop playing sound
+        SDL_PauseAudioDevice(sdl.dev, 1); // Pause sound
 
     }
 }
@@ -964,7 +1022,7 @@ int main(int argc, char **argv)
 
     // Initialize SDL
     sdl_t sdl = {0};
-    if (!init_sdl(&sdl, config, rom_name)) exit(EXIT_FAILURE);
+    if (!init_sdl(&sdl, &config, rom_name)) exit(EXIT_FAILURE);
 
     // initialize chip8 machine
     chip8_t chip8 = {0};
@@ -997,7 +1055,7 @@ int main(int argc, char **argv)
         uint64_t end_frame_time = SDL_GetPerformanceCounter();
 
         // Delay for approx. 60hz/60fps (16.67ms)
-        const double time_elapsed = (double)((end_frame_time - start_frame_time) / 1000) / SDL_GetPerformanceFrequency();
+        const double time_elapsed = (double)((end_frame_time - start_frame_time) * 1000) / SDL_GetPerformanceFrequency();
 
         // SDL_Delay(16 - actual time);
         SDL_Delay(16.67f > time_elapsed ? 16.67f - time_elapsed : 0);
@@ -1006,7 +1064,7 @@ int main(int argc, char **argv)
         update_screen(sdl, config, chip8);
 
         // Update delay & sound timers every 60 Hz
-        update_timers(&chip8);
+        update_timers(sdl, &chip8);
     }
 
     // Final cleanup
