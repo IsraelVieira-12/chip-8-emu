@@ -30,6 +30,7 @@ typedef struct
     uint32_t square_wave_freq;  // Frequency of square wave sound e.g. 440hz for middle A
     uint32_t audio_sample_rate; // 
     int16_t volume;             // How loud is the sound
+    float color_lerp_rate;      // Amount to lerp colors by, between (0.1, 1.0)
 } config_t;
 
 // Emulator states
@@ -57,17 +58,40 @@ typedef struct
     emulator_state_t state;
     uint8_t ram[4096];
     bool display[64*32];    // uint8_t *display; // display = &ram[0xF00]; display; Emulate original CHIP8 resolution pixels
+    uint32_t pixel_color[64*32]; //CHIP8 pixel colors to draw
     uint16_t stack[12];     // Subroutine stack
     uint16_t *stack_ptr;
     uint8_t V[16];          // Data registrews V0-VF; uint8_t V[0x10]
     uint16_t I;             // Index register
     uint16_t PC;            // Program counter
-    uint8_t delay_timer;    // Decrements at 60hz when >0
-    uint8_t sound_timer;    // Decrements at 60hz and plays tone when >0
+    uint8_t delay_timer;    // Decrements at 60 Hz when >0
+    uint8_t sound_timer;    // Decrements at 60 Hz and plays tone when >0
     bool keypad[16];        // Hexadecimal keypad 0x0-0xF
     const char *rom_name;   // Currently running ROM
     instruction_t inst;     // Currently executing instruction
+    bool draw;              // Update the screen yes/no
 } chip8_t;
+
+// Color "lerp" helper function
+uint32_t color_lerp(const uint32_t start_color, const uint32_t end_color, const float t)
+{
+    const uint8_t s_r = (start_color >> 24) & 0xFF;
+    const uint8_t s_g = (start_color >> 16) & 0xFF;
+    const uint8_t s_b = (start_color >>  8) & 0xFF;
+    const uint8_t s_a = (start_color >>  0) & 0xFF;
+
+    const uint8_t e_r = (end_color >> 24) & 0xFF;
+    const uint8_t e_g = (end_color >> 16) & 0xFF;
+    const uint8_t e_b = (end_color >>  8) & 0xFF;
+    const uint8_t e_a = (end_color >>  0) & 0xFF;
+
+    const uint8_t ret_r = ((1-t)*s_r) + (t*e_r);
+    const uint8_t ret_g = ((1-t)*s_g) + (t*e_g);
+    const uint8_t ret_b = ((1-t)*s_b) + (t*e_b);
+    const uint8_t ret_a = ((1-t)*s_a) + (t*e_a);
+
+    return (ret_r << 24) | (ret_g << 16) | (ret_b << 8) | ret_a;
+}
 
 // SDL Audio callback
 // Fill out ...
@@ -127,7 +151,7 @@ bool init_sdl(sdl_t *sdl, config_t *config, const char rom_name[])
         .freq = 44100,              // 44100 Hz "CD" quality
         .format = AUDIO_S16LSB,     // Signed 16 bit little endian
         .channels = 1,              // Mono, 1 channel
-        .samples = 4096,            //
+        .samples = 512,            //
         .callback = audio_callback, //
         .userdata = config,         // Userdata passed to audio callback
     };
@@ -166,20 +190,27 @@ bool set_config_from_args(config_t *config, const int argc, char **argv)
         .square_wave_freq = 440,// 440 Hz for middle A
         .audio_sample_rate = 44100, // CD quality
         .volume = 3000,         // INT16_MAX would be max volume
+        .color_lerp_rate = 0.7, // Color lerp rate, beetween (0.1, 1.0)
     };
 
     // Override defaults from passed in arguments
     for (int i = 1; i < argc; i++)
     {
         (void)argv[i]; // Prevent compiler error from unused variables argc/argv
-        // ..
+        // e.g. set scale factor
+        if(strncmp(argv[i], "--scale-factor", strlen("--scale-factor")) == 0)
+        {
+            // Note: should probably add checks for numeric
+            i++;
+            config->scale_factor = (uint32_t)strtol(argv[i], NULL, 10);
+        }
     }
 
     return true; 
 }
 
 // Initialize CHIP* machine
-bool init_chip8(chip8_t *chip8, const char rom_name[])
+bool init_chip8(chip8_t *chip8, const config_t config, const char rom_name[])
 {
     const uint32_t entry_point = 0x200; // CHIP8 Roms will be loaded to 0x200
     const uint8_t font[] =
@@ -202,18 +233,21 @@ bool init_chip8(chip8_t *chip8, const char rom_name[])
         0xF0, 0x80, 0xF0, 0x80, 0x80,   // F
     };
 
+    // Initialize entire CHIP8 machine
+    memset(chip8, 0, sizeof(chip8_t));
+
     // Load font
     memcpy(&chip8->ram[0], font, sizeof(font));
 
-    // Open rom file
+    // Open ROM file
     FILE *rom = fopen(rom_name, "rb");
     if (!rom)
     {
-        SDL_Log("Rom file %s is invalid or does not exist\n", rom_name);
+        SDL_Log("ROM file %s is invalid or does not exist\n", rom_name);
         return false;
     }
 
-    // Get/check rom size
+    // Get/check ROM size
     fseek(rom, 0, SEEK_END);
     const size_t rom_size = ftell(rom);
     const size_t max_size = sizeof chip8->ram - entry_point;
@@ -221,14 +255,14 @@ bool init_chip8(chip8_t *chip8, const char rom_name[])
 
     if (rom_size > max_size)
     {
-        SDL_Log("Rom file %s is too big! Rom size: %zu, Max size allowed: %zu\n",
-                rom_name, rom_size, max_size);
+        SDL_Log("ROM file %s is too big! ROM size: %llu, Max size allowed: %llu\n",
+                rom_name, (long long unsigned)rom_size, (long long unsigned)max_size);
         return false;
     }
 
     if (fread(&chip8->ram[entry_point], rom_size, 1, rom) != 1)
     {
-        SDL_Log("Culd not read Rom file %s into CHIP8 memory\n!", rom_name);
+        SDL_Log("Culd not read ROM file %s into CHIP8 memory\n!", rom_name);
     }
 
     fclose(rom);
@@ -238,6 +272,7 @@ bool init_chip8(chip8_t *chip8, const char rom_name[])
     chip8->PC = entry_point;    // Start program counter at ROM entry point
     chip8->rom_name = rom_name; //
     chip8->stack_ptr = &chip8->stack[0]; 
+    memset(&chip8->pixel_color[0], config.bg_color, sizeof chip8->pixel_color); // ...
 
     return true; // Success
 }
@@ -262,37 +297,51 @@ void clear_screen(const sdl_t sdl, const config_t config)
 }
 
 // Update window with any changes
-void update_screen(const sdl_t sdl, const config_t config, const chip8_t chip8)
+void update_screen(const sdl_t sdl, const config_t config, chip8_t *chip8)
 {
     SDL_Rect rect = {.x = 0, .y = 0, .w = config.scale_factor, .h = config.scale_factor};
     // Grab color values to draw
-    const uint8_t fg_r = (config.fg_color >> 24) & 0xFF;
+
+    /*const uint8_t fg_r = (config.fg_color >> 24) & 0xFF;
     const uint8_t fg_g = (config.fg_color >> 16) & 0xFF;
     const uint8_t fg_b = (config.fg_color >>  8) & 0xFF;
-    const uint8_t fg_a = (config.fg_color >>  0) & 0xFF;
+    const uint8_t fg_a = (config.fg_color >>  0) & 0xFF;*/
 
+    // Grab ....
     const uint8_t bg_r = (config.bg_color >> 24) & 0xFF;
     const uint8_t bg_g = (config.bg_color >> 16) & 0xFF;
     const uint8_t bg_b = (config.bg_color >>  8) & 0xFF;
     const uint8_t bg_a = (config.bg_color >>  0) & 0xFF;
 
     // Loop through display pixels, draw a rectangle per pixel to the SDL window
-    for (uint32_t i = 0; i < sizeof chip8.display; i++) {
+    for (uint32_t i = 0; i < sizeof chip8->display; i++) {
         // Translate 1D index i value to 2d X/Y coordinates
         // X = 1 % window width
         // Y = i / window width
         rect.x = (i % config.window_width) * config.scale_factor;
         rect.y = (i / config.window_width) * config.scale_factor;
 
-        if (chip8.display[i])
+        if (chip8->display[i])
         {
             // Pixel is on, draw foreground color
-            SDL_SetRenderDrawColor(sdl.renderer, fg_r, fg_g, fg_b, fg_a);
+            if(chip8->pixel_color[i] != config.fg_color)
+            {
+                // lerp towards fg_color
+                chip8->pixel_color[i] = color_lerp(chip8->pixel_color[i], config.fg_color, config.color_lerp_rate);
+            }
+            
+            const uint8_t r = (config.fg_color >> 24) & 0xFF;
+            const uint8_t g = (config.fg_color >> 16) & 0xFF;
+            const uint8_t b = (config.fg_color >>  8) & 0xFF;
+            const uint8_t a = (config.fg_color >>  0) & 0xFF;
+
+            SDL_SetRenderDrawColor(sdl.renderer, r, g, b, a);
             SDL_RenderFillRect(sdl.renderer, &rect);
 
-            // if user requested drawing pixel outlines, draw those here
+            // TODO: Move this outside if/else, and combine pering or at leat reduce duplicate code
             if (config.pixel_outlines)
             {
+                // if user requested drawing pixel outlines, draw those here
                 SDL_SetRenderDrawColor(sdl.renderer, bg_r, bg_g, bg_b, bg_a);
                 SDL_RenderDrawRect(sdl.renderer, &rect);
             }
@@ -300,8 +349,18 @@ void update_screen(const sdl_t sdl, const config_t config, const chip8_t chip8)
         }
         else
         {
-            // Pixel is off, draw background color
-            SDL_SetRenderDrawColor(sdl.renderer, bg_r, bg_g, bg_b, bg_a);
+            if(chip8->pixel_color[i] != config.bg_color)
+            {
+                // lerp towards bg_color
+                chip8->pixel_color[i] = color_lerp(chip8->pixel_color[i], config.bg_color, config.color_lerp_rate);
+            }
+            
+            const uint8_t r = (config.bg_color >> 24) & 0xFF;
+            const uint8_t g = (config.bg_color >> 16) & 0xFF;
+            const uint8_t b = (config.bg_color >>  8) & 0xFF;
+            const uint8_t a = (config.bg_color >>  0) & 0xFF;
+
+            SDL_SetRenderDrawColor(sdl.renderer, r, g, b, a);
             SDL_RenderFillRect(sdl.renderer, &rect);
 
         }
@@ -318,7 +377,7 @@ void update_screen(const sdl_t sdl, const config_t config, const chip8_t chip8)
 789E                asdf
 A0BF                zxcv
 */
-void handle_input(chip8_t *chip8)
+void handle_input(chip8_t *chip8, config_t *config)
 {
     SDL_Event event;
 
@@ -329,7 +388,7 @@ void handle_input(chip8_t *chip8)
             case SDL_QUIT:
                 // exit window; End Program
                 chip8->state = QUIT;
-                return;
+            break;
 
             case SDL_KEYDOWN:
                 switch (event.key.keysym.sym)
@@ -337,17 +396,49 @@ void handle_input(chip8_t *chip8)
                     case SDLK_ESCAPE:
                         // ESCAPE key; exit window & End program
                         chip8->state = QUIT;
-                        return;
+                    break;
                     
                     case SDLK_SPACE:
                         // Space bar
                         if (chip8->state == RUNNING)
-                            chip8->state = PAUSED;
-                        else {
-                            chip8->state = RUNNING;
+                        {
+                            chip8->state = PAUSED; // Paused
                             puts("===== Paused =====");
                         }
-                        return;
+                        else
+                        {
+                            chip8->state = RUNNING; // Resume
+                        }
+                    break;
+
+                    case SDLK_EQUALS:
+                        // '=': Reset CHIP8 machine for the current ROM
+                        init_chip8(chip8, *config, chip8->rom_name);
+                    break;
+
+                    case SDLK_j:
+                        // 'j': Decrease color lerp rate
+                        if(config->color_lerp_rate > 0.1)
+                            config->color_lerp_rate -= 0.1;
+                    break;
+
+                    case SDLK_k:
+                        // 'k': Increase color lerp rate
+                        if(config->color_lerp_rate < 0.1)
+                            config->color_lerp_rate += 0.1;
+                    break;
+
+                    case SDLK_o:
+                        // 'o': Decrease volume
+                        if(config->volume > 0)
+                            config->volume -= 500;
+                    break;
+
+                    case SDLK_p:
+                        // 'p': Increase volume
+                        if(config->volume < INT16_MAX)
+                            config->volume += 500;
+                    break;
 
                     // Map querty keys to CHIP8 keypad                        
                     case SDLK_1: chip8->keypad[0x1] = true; break;
@@ -401,10 +492,10 @@ void handle_input(chip8_t *chip8)
 
                 default: break;
             }
-            break;
+        break;
 
         default:
-            break;
+        break;
         }
     }
 }
@@ -447,8 +538,8 @@ void print_debug_info(chip8_t *chip8)
             // Store current address to return to on subroutine stack ("push" int on the stack)
             //  and set program counter to subroutine address so that the next opcode
             //  is gotten from there.
-            *chip8->stack_ptr++ = chip8->PC;
-            chip8->PC = chip8->inst.NNN;
+            printf("Call subroutine at NNN (0x%04X)\n",
+                    chip8->inst.NNN);
         break;
 
         case 0x03:
@@ -709,7 +800,8 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
             if (chip8->inst.NN == 0xE0)
             {
                 // 0x00E0: Clear the screen
-                memset(&chip8->display[0], false, sizeof chip8->display); 
+                memset(&chip8->display[0], false, sizeof chip8->display);
+                chip8->draw = true; // Will update screen on next 60 Hz tick
             }
             else if (chip8->inst.NN == 0xEE)
             {
@@ -890,7 +982,8 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
                 // Stop drawing entire sprite
                 if (++Y_coord >= config.window_height) break;
             }
-            break;
+            chip8->draw = true; // Will update screen on next 60 Hz tick
+        break;
 
         case 0x0E:
             if (chip8->inst.NN == 0x9E)
@@ -905,7 +998,7 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
                 if (!chip8->keypad[chip8->V[chip8->inst.X]])
                     chip8->PC += 2;
             }
-            break;
+        break;
 
         case 0x0F:
             switch (chip8->inst.NN)
@@ -997,12 +1090,10 @@ void update_timers(const sdl_t sdl, chip8_t *chip8)
     {
         chip8->sound_timer--;
         SDL_PauseAudioDevice(sdl.dev, 0); // Play sound
-
     }
     else
     {
         SDL_PauseAudioDevice(sdl.dev, 1); // Pause sound
-
     }
 }
 
@@ -1026,7 +1117,7 @@ int main(int argc, char **argv)
 
     // initialize chip8 machine
     chip8_t chip8 = {0};
-    if (!init_chip8(&chip8, rom_name)) exit(EXIT_FAILURE);
+    if (!init_chip8(&chip8, config, rom_name)) exit(EXIT_FAILURE);
 
     // Initial screen clear
     clear_screen(sdl, config);
@@ -1038,7 +1129,7 @@ int main(int argc, char **argv)
     while (chip8.state != QUIT)
     {
         // handle user input
-        handle_input(&chip8);
+        handle_input(&chip8, &config);
 
         if (chip8.state == PAUSED) continue;
 
@@ -1060,8 +1151,13 @@ int main(int argc, char **argv)
         // SDL_Delay(16 - actual time);
         SDL_Delay(16.67f > time_elapsed ? 16.67f - time_elapsed : 0);
 
-        // Update window with changes
-        update_screen(sdl, config, chip8);
+        // Update window with changes every 60 Hz
+        if(chip8.draw)
+        {
+            // Update window with changes
+            update_screen(sdl, config, &chip8);
+            chip8.draw = false;
+        }
 
         // Update delay & sound timers every 60 Hz
         update_timers(sdl, &chip8);
