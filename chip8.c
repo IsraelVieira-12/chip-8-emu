@@ -17,6 +17,20 @@ typedef struct
     SDL_AudioDeviceID dev;
 } sdl_t;
 
+// Emulator states
+typedef enum {
+    QUIT,
+    RUNNING,
+    PAUSED,
+} emulator_state_t;
+
+// CHIP8 extensions/quirk support
+typedef enum {
+    CHIP8,
+    SUPERCHIP,
+    XOCHIP,
+} extension_t;
+
 // Emulator configuation object
 typedef struct
 {
@@ -31,14 +45,8 @@ typedef struct
     uint32_t audio_sample_rate; // 
     int16_t volume;             // How loud or not is the sound
     float color_lerp_rate;      // Amount to lerp colors by, between [0.0, 1.0]
+    extension_t current_extension;  // Current quirks/extension support for e.g. CHIP8 vs. SUPERCHIP
 } config_t;
-
-// Emulator states
-typedef enum {
-    QUIT,
-    RUNNING,
-    PAUSED,
-} emulator_state_t;
 
 // CHIP8 instruction format
 typedef struct {
@@ -180,6 +188,7 @@ bool set_config_from_args(config_t *config, const int argc, char **argv) {
         .audio_sample_rate = 44100, // CD quality. 44100hz
         .volume = 3000,             // INT16_MAX would be max volume
         .color_lerp_rate = 0.7,     // Color lerp rate, between [0.1, 1.0]
+        .current_extension = CHIP8, // Set default quirks/extensions 
     };
 
     // Override defaults from passed in arguments
@@ -737,6 +746,8 @@ void print_debug_info(chip8_t *chip8) {
 
 // Emulate 1 CHIP8 instruction
 void emulate_instruction(chip8_t *chip8, const config_t config) {
+    bool carry; // Save carry flag/VF value for some instructions
+
     // Get next opcode from ROM/ram
     chip8->inst.opcode = (chip8->ram[chip8->PC] << 8) | chip8->ram[chip8->PC+1];
     chip8->PC += 2; // Pre-increment program counter for next opcode 
@@ -827,52 +838,63 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
                case 1:
                     // 0x8XY1: Set register VX |= VY
                     chip8->V[chip8->inst.X] |= chip8->V[chip8->inst.Y];
+                    if (config.current_extension == CHIP8)
+                        chip8->V[0xF] = 0; // Reset VF to 0
                     break;
 
                case 2:
                     // 0x8XY2: Set register VX &= VY
                     chip8->V[chip8->inst.X] &= chip8->V[chip8->inst.Y];
+                    if (config.current_extension == CHIP8)
+                        chip8->V[0xF] = 0; // Reset VF to 0
                     break;
 
                case 3:
                     // 0x8XY3: Set register VX ^= VY
                     chip8->V[chip8->inst.X] ^= chip8->V[chip8->inst.Y];
+                    if (config.current_extension == CHIP8)
+                        chip8->V[0xF] = 0; // Reset VF to 0
                     break;
                 
                case 4:
-                    // 0x8XY4: Set register VX += VY, set VF to 1 if carry
-                    if ((uint16_t)(chip8->V[chip8->inst.X] + chip8->V[chip8->inst.Y]) > 255)
-                        chip8->V[0xF] = 1;
-
+                    // 0x8XY4: Set register VX += VY, set VF to 1 if carry, 0 if not
+                    carry = ((uint16_t)(chip8->V[chip8->inst.X] + chip8->V[chip8->inst.Y]) > 255); //
+                    
                     chip8->V[chip8->inst.X] += chip8->V[chip8->inst.Y];
+                    chip8->V[0xF] = carry;
                     break;
 
                 case 5:
                     // 0x8XY5: Set register VX -= VY, set VF to 1 if there is not a borrow (result is positive)
-                    //if (chip8->V[chip8->inst.Y] <= chip8->V[chip8->inst.X])
-                    //    chip8->V[0xF] = 1;
-                    chip8->V[0xF] = chip8->V[chip8->inst.Y] <= chip8->V[chip8->inst.X];
+                    carry = (chip8->V[chip8->inst.Y] <= chip8->V[chip8->inst.X]);
+
                     chip8->V[chip8->inst.X] -= chip8->V[chip8->inst.Y];
+                    chip8->V[0xF] = carry;
                     break;
 
                 case 6:
                     // 0x8XY6: Set register VX >>= 1, store shifted off bit in VF
-                    chip8->V[0xF] = chip8->V[chip8->inst.X] & 1;
+                    carry = chip8->V[chip8->inst.X] & 1;
                     chip8->V[chip8->inst.X] >>= 1;
+
+                    chip8->V[0xF] = carry; 
                     break;
 
                 case 7:
                     // 0x8XY7: Set register VX = VY - VX, set VF to 1 if there is not a borrow (result is positive) 
-                    //if(chip8->V[0xF] <= chip8->V[chip8->inst.X])
-                    //    chip8->V[0xF] = 1;
-                    chip8->V[0xF] = chip8->V[chip8->inst.X] <= chip8->V[chip8->inst.Y];
+                    carry = (chip8->V[chip8->inst.X] <= chip8->V[chip8->inst.Y]);
+
                     chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] - chip8->V[chip8->inst.X];
+                    chip8->V[0xF] = carry;
                     break;
                 
                 case 0xE:
                     //0x8EXYE: Set register VX <<- 1, store shifted off bit in VF
-                    chip8->V[0xF] = (chip8->V[chip8->inst.X] & 0x80) >> 7;
+                    carry = (chip8->V[chip8->inst.X] & 0x80) >> 7;
+
                     chip8->V[chip8->inst.X] <<= 1;
+                    chip8->V[0xF] = carry;
+                    break;
 
                 default:
                     // Wrong/unimplemented opcode
@@ -1008,17 +1030,25 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
                 case 0x55:
                     //0xFX55: Register dump V0-VX inclusive to memory offset from I;
                     //  SCHIP does not increment I, CHIP does increment I
-                    // Note: Could make this a config flag to use SCHIP or CHIP8 logic for I
-                    for (uint8_t i = 0; i <= chip8->inst.X; i++)
-                        chip8->ram[chip8->I + i] = chip8->V[i];
+                    for (uint8_t i = 0; i <= chip8->inst.X; i++) {
+
+                        if (config.current_extension == CHIP8) {
+                            chip8->ram[chip8->I++] = chip8->V[i]; // Increment I each time
+                        }
+                        else
+                            chip8->ram[chip8->I + 1] = chip8->V[i];
+                    }
                     break;
                 
                 case 0x65:
                     //0xFX55: Register dump V0-VX inclusive to memory offset from I;
                     //  SCHIP does not increment I, CHIP does increment I
-                    // Note: Could make this a config flag to use SCHIP or CHIP8 logic for I
-                    for (uint8_t i = 0; i <= chip8->inst.X; i++)
-                        chip8->V[i] = chip8->ram[chip8->I + i];
+                    for (uint8_t i = 0; i <= chip8->inst.X; i++) {
+                        if (config.current_extension == CHIP8)
+                            chip8->V[i] = chip8->ram[chip8->I++]; // Increment I each time
+                        else
+                            chip8->V[i] = chip8->ram[chip8->I + 1];
+                    }
                     break;
 
                 default:
