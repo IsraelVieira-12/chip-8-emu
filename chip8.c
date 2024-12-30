@@ -801,8 +801,16 @@ void emulate_instructions(chip8_t *chip8, const config_t config){
                     break;
                 case 6:
                     // 0x8XY6: Set register VX >>= 1, store shifted off bit in VF
-                    carry = chip8->V[chip8->inst.X] & 1;
-                    chip8->V[chip8->inst.X] >>= 1;
+                    
+                    if(config.current_extension == CHIP8){
+                        carry = chip8->V[chip8->inst.Y] & 1;
+                        chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] >> 1;
+                    }
+                    else{
+                        carry = chip8->V[chip8->inst.X] & 1;
+                        chip8->V[chip8->inst.X] >>= 1;
+                    }
+
                     chip8->V[0xF] = carry;
                     break;
                 case 7:
@@ -817,8 +825,15 @@ void emulate_instructions(chip8_t *chip8, const config_t config){
                     break;
                 case 0xE:
                     // 0x8XYE: Set register VX <<= 1, store shifted off bit in VF
-                    carry = (chip8->V[chip8->inst.X] & 0x80) >> 7;
-                    chip8->V[chip8->inst.X] <<= 1;
+                    if(config.current_extension == CHIP8){
+                        carry = (chip8->V[chip8->inst.Y] & 0x80) >> 7;
+                        chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] << 1;
+                    }
+                    else{
+                        carry = (chip8->V[chip8->inst.X] & 0x80) >> 7;
+                        chip8->V[chip8->inst.X] <<= 1;
+                    }
+
                     chip8->V[0xF] = carry;
                     break;
                 default:
@@ -897,10 +912,12 @@ void emulate_instructions(chip8_t *chip8, const config_t config){
             switch(chip8->inst.NN){
                 case 0x0A:
                     // 0xFX0A: VX = get_key(): Await until a keypress, an store in VX
-                    bool any_key_pressed = false;
-                    for(uint8_t i = 0; i < sizeof chip8->keypad; i++){
+                    static bool any_key_pressed = false;
+                    static uint8_t key = 0xFF;
+                    for(uint8_t i = 0; key == 0xFF && i < sizeof chip8->keypad; i++){
                         if(chip8->keypad[i]){
-                            chip8->V[chip8->inst.X] = i; // i = key (offset into keypad array)
+                            key = i;
+                            //chip8->V[chip8->inst.X] = i; // i = key (offset into keypad array)
                             any_key_pressed = true;
                             break;
                         }
@@ -908,8 +925,20 @@ void emulate_instructions(chip8_t *chip8, const config_t config){
 
                     // Keep gettinh the current opcode nad running this instruction
                     if(!any_key_pressed){
-                        chip8->PC -= 2; 
+                        chip8->PC -= 2;
                     }
+                    else{
+                        if(chip8->keypad[key]){
+                            chip8->PC -= 2; 
+                        }
+                        else{
+                            // A key has been pressed, also wait until it is released
+                            chip8->V[chip8->inst.X] = key;
+                            key = 0xFF;
+                            any_key_pressed = false;
+                        }
+                    }
+
                     break;
 
                 case 0x1E:
@@ -1048,10 +1077,10 @@ int main(int argc, char **argv){
         const double time_elapsed = (double)((end_frame_time - start_frame_time) * 1000) / SDL_GetPerformanceFrequency();
         SDL_Delay(16.67f > time_elapsed ? 16.67f - time_elapsed : 0);
 
-        if(chip8.draw){
+        //if(chip8.draw){
             update_screen(sdl, config, &chip8);
-            chip8.draw = false;
-        }
+            //chip8.draw = false;
+        //}
         
         // Update delays and sound timers
         update_timers(sdl, &chip8);
