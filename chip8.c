@@ -926,9 +926,17 @@ void emulate_instruction(chip8_t *chip8, const config_t config)
 
                 case 6:
                     // 0x8XY6: Set register VX >>= 1, store shifted off bit in VF
-                    carry = chip8->V[chip8->inst.X] & 1;
+                    if(config.current_extension == CHIP8)
+                    {
+                        carry = chip8->V[chip8->inst.Y] & 1;
+                        chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] >> 1;
+                    }
+                    else
+                    {
+                        carry = chip8->V[chip8->inst.X] & 1;
+                        chip8->V[chip8->inst.X] >>= 1;
+                    }
                     
-                    chip8->V[chip8->inst.X] >>= 1;
                     chip8->V[0xF] = carry;
                 break;
 
@@ -944,8 +952,16 @@ void emulate_instruction(chip8_t *chip8, const config_t config)
                 
                 case 0xE:
                     //0x8EXYE: Set register VX <<- 1, store shifted off bit in VF
-                    carry = (chip8->V[chip8->inst.X] & 0x80) >> 7;
-                    chip8->V[chip8->inst.X] <<= 1;
+                    if(config.current_extension == CHIP8)
+                    {
+                        carry = (chip8->V[chip8->inst.Y] & 0x80) >> 7;
+                        chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] << 1;
+                    }
+                    else
+                    {
+                        carry = (chip8->V[chip8->inst.X] & 0x80) >> 7;
+                        chip8->V[chip8->inst.X] <<= 1;
+                    }
 
                     chip8->V[0xF] = carry;
                 break;
@@ -1036,18 +1052,35 @@ void emulate_instruction(chip8_t *chip8, const config_t config)
             {
                 case 0x0A:
                     // 0xFX0A: VX = get_key(); Await until a keypress, and store in VX
-                    bool any_key_pressed = false;
-                    for (uint8_t i = 0; i < sizeof chip8->keypad; i++)
+                    static bool any_key_pressed = false;
+                    uint8_t key = 0xFF;
+                    for (uint8_t i = 0; key == 0xFF && 1 < sizeof chip8->keypad; i++)
                     {
                         if (chip8->keypad[i])
                         {
-                            chip8->V[chip8->inst.X] = i; // i = key (offset into keypad array)
+                            key = i;
+                            //chip8->V[chip8->inst.X] = i; // i = key (offset into keypad array)
+                            any_key_pressed = true;
                             break;
                         }
                     }
                 
                 // If no key has been pressed yet, keep getting the current opcode & running this instruction
                 if (!any_key_pressed) chip8->PC -= 2;
+                else
+                {
+                    //
+                    if(chip8->keypad[key])
+                    {
+                        chip8->PC -= 2;
+                    }
+                    else
+                    {
+                        chip8->V[chip8->inst.X] = key; // i = key (offset into keypad array)
+                        key = 0xFF;
+                        any_key_pressed = false;
+                    }
+                }
                     
                 break;
 
@@ -1197,12 +1230,12 @@ int main(int argc, char **argv)
         SDL_Delay(16.67f > time_elapsed ? 16.67f - time_elapsed : 0);
 
         // Update window with changes every 60 Hz
-        if(chip8.draw)
-        {
+        //if(chip8.draw)
+        //{
             // Update window with changes
             update_screen(sdl, config, &chip8);
             chip8.draw = false;
-        }
+        //}
 
         // Update delay & sound timers every 60 Hz
         update_timers(sdl, &chip8);
