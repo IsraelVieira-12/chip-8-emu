@@ -319,7 +319,6 @@ void update_screen(const sdl_t sdl, const config_t config, chip8_t *chip8) {
 
             SDL_SetRenderDrawColor(sdl.renderer, r, g, b, a);
             SDL_RenderFillRect(sdl.renderer, &rect);
-            //TODO: Move this outside if/else, and combine lerping or at least reduce duplicate code
             // if user requested drawing pixel outlines, draw those here
             if (config.pixel_outlines) {
                 SDL_SetRenderDrawColor(sdl.renderer, bg_r, bg_g, bg_b, bg_a);
@@ -874,8 +873,13 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
 
                 case 6:
                     // 0x8XY6: Set register VX >>= 1, store shifted off bit in VF
-                    carry = chip8->V[chip8->inst.X] & 1;
-                    chip8->V[chip8->inst.X] >>= 1;
+                    if (config.current_extension == CHIP8) {
+                        carry = chip8->V[chip8->inst.Y] & 1;    // Use VY
+                        chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] >> 1;  // Set VX = VY result
+                    } else {
+                        carry = chip8->V[chip8->inst.X] & 1;    // Use VX
+                        chip8->V[chip8->inst.X] >>= 1;          // Use VX
+                    }
 
                     chip8->V[0xF] = carry; 
                     break;
@@ -890,9 +894,14 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
                 
                 case 0xE:
                     //0x8EXYE: Set register VX <<- 1, store shifted off bit in VF
-                    carry = (chip8->V[chip8->inst.X] & 0x80) >> 7;
-
-                    chip8->V[chip8->inst.X] <<= 1;
+                    if (config.current_extension == CHIP8) {
+                        carry = (chip8->V[chip8->inst.Y] & 0x80) >> 7;  // Use VY
+                        chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] << 1; // Set VX = VY result
+                    } else {
+                        carry = (chip8->V[chip8->inst.X] & 0x80) >> 7;  // VX
+                        chip8->V[chip8->inst.X] <<= 1;                  // Use VX
+                    }
+                    
                     chip8->V[0xF] = carry;
                     break;
 
@@ -978,17 +987,29 @@ void emulate_instruction(chip8_t *chip8, const config_t config) {
             switch (chip8->inst.NN) {
                 case 0x0A:
                     // 0xFX0A: VX = get_key(); Await until a keypress, and store in VX
-                    bool any_key_pressed = false;
-                    for (uint8_t i = 0; i < sizeof chip8->keypad; i++) {
+                    static bool any_key_pressed = false;
+                    static uint8_t key = -1;
+
+                    for (uint8_t i = 0; key == 0xFF && i < sizeof chip8->keypad; i++) {
                         if (chip8->keypad[i]) {
-                            chip8->V[chip8->inst.X] = i; // i = key (offset into keypad array)
+                            key = i;    // Save pressed key to check until it is released
+                            any_key_pressed = true;
                             break;
                         }
                     }
                 
                     // If no key has been pressed yet, keep getting the current opcode & running this instruction
                     if (!any_key_pressed) chip8->PC -= 2;
-                    
+                    else{
+                        // A key has been pressed, also wait until it is released to set the key in VX
+                        if (chip8->keypad[key])     // Busy loop until key is not pressed
+                            chip8->PC -= 2;
+                        else {
+                            chip8->V[chip8->inst.X] = key;    // VX = key
+                            key = 0xFF;                       // Reset key to not found
+                            any_key_pressed = false;        // Reset to nothing pressed yet
+                        }
+                    }
                     break;
 
                 case 0x1E:
@@ -1126,10 +1147,7 @@ int main(int argc, char **argv) {
         SDL_Delay(16.67f > time_elapsed ? 16.67f - time_elapsed : 0);
 
         // Update window with changes
-        if (chip8.draw) {
-            update_screen(sdl, config, &chip8);
-            chip8.draw = false;
-        }
+        update_screen(sdl, config, &chip8);
 
         // Update delay & soud timer every 60hz
         update_timers(sdl, &chip8);
